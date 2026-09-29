@@ -2,7 +2,9 @@
 
 from datetime import UTC, datetime
 
-from custom_components.linznetz.api import complete_hours, parse_quarter_hours
+import pytest
+
+from custom_components.linznetz.api import LinzNetzError, complete_hours, parse_quarter_hours
 
 from .conftest import portal_csv
 
@@ -31,3 +33,12 @@ def test_repeated_hour_in_october_is_second_utc_hour() -> None:
         (datetime(2026, 10, 25, 1, 0, tzinfo=UTC), 1.2),
         (datetime(2026, 10, 25, 2, 0, tzinfo=UTC), 1.6),
     ]
+
+
+def test_changed_columns_are_a_portal_change() -> None:
+    csv = "Von;Bis;Leistung in kW\n16.09.2026 00:00;16.09.2026 00:15;0,4\n"
+
+    with pytest.raises(LinzNetzError) as err:
+        parse_quarter_hours(csv)
+
+    assert err.value.code == "csv-format"

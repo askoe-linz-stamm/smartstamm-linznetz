@@ -14,7 +14,7 @@ import io
 import re
 from zoneinfo import ZoneInfo
 
-from aiohttp import ClientError, ClientSession, ClientTimeout
+from aiohttp import ClientError, ClientResponseError, ClientSession, ClientTimeout
 
 PORTAL_URL = "https://services.linznetz.at/verbrauchsdateninformation/consumption.jsf"
 VIENNA = ZoneInfo("Europe/Vienna")
@@ -32,14 +32,33 @@ _VIEW_STATE_RE = re.compile(
 _KIND_FIELD_RE = re.compile(r'name="(myForm1:[^"]*grid_eval:selectedClass)"')
 _UNIT_FIELD_RE = re.compile(r'name="(myForm1:[^"]*:selectedClass)"[^>]*value="KWH"')
 _EXPORT_RE = re.compile(r'id="(myForm1:exportAreaID:[^"]+)"')
+_CSV_HEADER = ["Datum von", "Datum bis", "Energiemenge in kWh"]
 
 
 class LinzNetzError(Exception):
-    """The portal did not respond as expected."""
+    """The portal no longer works as expected, most likely after a redesign.
+
+    ``code`` names the failing step with a stable, non-sensitive identifier
+    (for example ``export-link``); SmartStamm uses it to file GitHub issues.
+    """
+
+    kind = "portal_changed"
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 class LinzNetzAuthError(LinzNetzError):
     """The portal rejected the credentials."""
+
+    kind = "login_rejected"
+
+
+class LinzNetzConnectionError(LinzNetzError):
+    """Network trouble, timeouts or server errors; usually temporary."""
+
+    kind = "connection_error"
 
 
 class LinzNetzClient:
@@ -55,7 +74,7 @@ class LinzNetzClient:
         try:
             page = await self._async_open_portal()
             view_state = _view_state(page)
-            kind_field = _find(_KIND_FIELD_RE, page, "Auswahl Viertelstundenwerte")
+            kind_field = _find(_KIND_FIELD_RE, page, "kind-field", "Auswahl Viertelstundenwerte")
 
             switched = await self._async_ajax(
                 view_state,
@@ -68,7 +87,7 @@ class LinzNetzClient:
             view_state = _view_state(switched, view_state)
             fields = {
                 kind_field: "ConsumQuarter",
-                _find(_UNIT_FIELD_RE, switched, "Einheit kWh"): "KWH",
+                _find(_UNIT_FIELD_RE, switched, "unit-field", "Einheit kWh"): "KWH",
                 f"{_FORM}:calendarFromRegion": first_day.strftime("%d.%m.%Y"),
                 f"{_FORM}:calendarToRegion": last_day.strftime("%d.%m.%Y"),
             }
@@ -83,7 +102,7 @@ class LinzNetzClient:
             )
             view_state = _view_state(shown, view_state)
             # The first export link is CSV; the others are XML and MSCONS.
-            export = _find(_EXPORT_RE, shown, "CSV-Export")
+            export = _find(_EXPORT_RE, shown, "export-link", "CSV-Export")
 
             async with self._session.post(
                 PORTAL_URL,
@@ -92,10 +111,15 @@ class LinzNetzClient:
             ) as response:
                 response.raise_for_status()
                 if ".csv" not in response.headers.get("Content-Disposition", ""):
-                    raise LinzNetzError("Portal lieferte keine CSV-Datei")
+                    raise LinzNetzError("not-csv", "Portal lieferte keine CSV-Datei")
                 return await response.text(encoding="utf-8")
-        except ClientError as err:
-            raise LinzNetzError(f"Verbindung zum Portal fehlgeschlagen: {err}") from err
+        except ClientResponseError as err:
+            # A missing page or form points to a redesign, server errors do not.
+            if err.status < 500:
+                raise LinzNetzError(f"http-{err.status}", f"Portal antwortet mit HTTP {err.status}") from err
+            raise LinzNetzConnectionError("connection", f"Portal antwortet mit HTTP {err.status}") from err
+        except (ClientError, TimeoutError) as err:
+            raise LinzNetzConnectionError("connection", "Verbindung zum Portal fehlgeschlagen") from err
 
     async def _async_open_portal(self) -> str:
         """Load the consumption page and sign in first when the session expired."""
@@ -114,7 +138,7 @@ class LinzNetzClient:
             response.raise_for_status()
             page = await response.text()
         if _LOGIN_FORM_RE.search(page):
-            raise LinzNetzAuthError("Anmeldung abgelehnt")
+            raise LinzNetzAuthError("login-rejected", "Anmeldung abgelehnt")
         return page
 
     async def _async_ajax(
@@ -145,10 +169,10 @@ class LinzNetzClient:
             return await response.text()
 
 
-def _find(pattern: re.Pattern[str], text: str, what: str) -> str:
+def _find(pattern: re.Pattern[str], text: str, code: str, what: str) -> str:
     match = pattern.search(text)
     if match is None:
-        raise LinzNetzError(f"Portal hat sich geändert: {what} nicht gefunden")
+        raise LinzNetzError(code, f"Portal hat sich geändert: {what} nicht gefunden")
     return match.group(1)
 
 
@@ -157,7 +181,7 @@ def _view_state(text: str, fallback: str | None = None) -> str:
     if match is not None:
         return match.group(1) or match.group(2)
     if fallback is None:
-        raise LinzNetzError("Portal hat sich geändert: ViewState nicht gefunden")
+        raise LinzNetzError("view-state", "Portal hat sich geändert: ViewState nicht gefunden")
     return fallback
 
 
@@ -170,16 +194,21 @@ def parse_quarter_hours(text: str) -> dict[datetime, float]:
     """
     readings: dict[datetime, float] = {}
     previous: datetime | None = None
-    rows = csv.reader(io.StringIO(text), delimiter=";")
-    next(rows, None)  # header
+    rows = csv.reader(io.StringIO(text.lstrip("\ufeff")), delimiter=";")
+    if next(rows, [])[:3] != _CSV_HEADER:
+        raise LinzNetzError("csv-format", "CSV-Export hat andere Spalten")
     for row in rows:
         if len(row) < 3 or not row[2]:
             continue
-        local = datetime.strptime(row[0], "%d.%m.%Y %H:%M")
+        try:
+            local = datetime.strptime(row[0], "%d.%m.%Y %H:%M")
+            kwh = float(row[2].replace(",", "."))
+        except ValueError as err:
+            raise LinzNetzError("csv-format", "CSV-Export hat ein anderes Format") from err
         start = local.replace(tzinfo=VIENNA).astimezone(UTC)
         if previous is not None and start <= previous:
             start = local.replace(tzinfo=VIENNA, fold=1).astimezone(UTC)
-        readings[start] = float(row[2].replace(",", "."))
+        readings[start] = kwh
         previous = start
     return readings
 

@@ -9,6 +9,7 @@ from pytest_homeassistant_custom_component.components.recorder.common import (
     async_wait_recording_done,
 )
 
+from custom_components.linznetz.api import LinzNetzError
 from custom_components.linznetz.const import (
     CONF_PRICE_ENTITY,
     CONSUMPTION_STATISTIC,
@@ -62,3 +63,40 @@ async def test_import_continues_and_corrects_overlap(
 
     assert await _sums(hass, CONSUMPTION_STATISTIC) == [1.0, 3.0, 5.0]
     assert fetch.await_args_list[-1].args[0].isoformat() == "2026-09-13"
+
+
+async def test_status_reports_lasting_portal_change(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    await hass.config.async_set_time_zone("Europe/Vienna")
+    freezer.move_to("2026-09-21 12:00:00+02:00")
+    entry = MockConfigEntry(domain=DOMAIN, data={"username": "verein", "password": "secret"})
+    entry.add_to_hass(hass)
+    fetch = AsyncMock(side_effect=LinzNetzError("export-link", "CSV-Export nicht gefunden"))
+    status = "sensor.linz_netz_stromzahler_status"
+    data_until = "sensor.linz_netz_stromzahler_data_until"
+
+    with patch("custom_components.linznetz.api.LinzNetzClient.async_fetch_csv", fetch):
+        # A failing first run still sets up the entry, so the problem is visible.
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        assert hass.states.get(status).state == "portal_changed"
+
+        fetch.side_effect = None
+        fetch.return_value = portal_csv(START, [0.25] * 4)
+        await entry.runtime_data.async_refresh()
+        await hass.async_block_till_done()
+        assert hass.states.get(status).state == "ok"
+        assert hass.states.get(status).attributes.get("error_code") is None
+
+        fetch.side_effect = LinzNetzError("export-link", "CSV-Export nicht gefunden")
+        await entry.runtime_data.async_refresh()
+        await entry.runtime_data.async_refresh()
+        await hass.async_block_till_done()
+
+    state = hass.states.get(status)
+    assert state.state == "portal_changed"
+    assert state.attributes["error_code"] == "export-link"
+    assert state.attributes["failed_runs"] == 2
+    # The statistics did not change, so the last import time stays visible.
+    assert hass.states.get(data_until).state == "2026-09-19T23:00:00+00:00"

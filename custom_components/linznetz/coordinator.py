@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import logging
 
@@ -65,11 +66,22 @@ _COST_META = StatisticMetaData(
 )
 
 
+@dataclass(frozen=True)
+class Problem:
+    """Consecutive failed runs with the same error code, shown by the status sensor."""
+
+    kind: str
+    code: str
+    since: datetime
+    failed_runs: int
+
+
 class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
     """Imports hourly consumption and returns the end of the newest imported hour.
 
     Every run reloads the last ``REFETCH_DAYS`` so that late or corrected portal
     values replace earlier ones. The first run loads the full portal history.
+    ``problem`` describes the current failure streak, or is None after success.
     """
 
     config_entry: LinzNetzConfigEntry
@@ -85,8 +97,29 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
             update_interval=UPDATE_INTERVAL,
         )
         self._client = client
+        self.problem: Problem | None = None
 
     async def _async_update_data(self) -> datetime | None:
+        try:
+            newest = await self._async_fetch_and_import()
+        except LinzNetzError as err:
+            previous = self.problem
+            streak = previous is not None and previous.code == err.code
+            self.problem = Problem(
+                kind=err.kind,
+                code=err.code,
+                since=previous.since if previous and streak else dt_util.utcnow(),
+                failed_runs=previous.failed_runs + 1 if previous and streak else 1,
+            )
+            # The coordinator skips listeners on repeated failures; the count must still show.
+            self.async_update_listeners()
+            if isinstance(err, LinzNetzAuthError):
+                raise ConfigEntryAuthFailed(str(err)) from err
+            raise UpdateFailed(str(err)) from err
+        self.problem = None
+        return newest
+
+    async def _async_fetch_and_import(self) -> datetime | None:
         recorder = get_instance(self.hass)
         last = await recorder.async_add_executor_job(
             get_last_statistics, self.hass, 1, CONSUMPTION_STATISTIC, False, {"sum"}
@@ -99,13 +132,7 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
             newest = None
             first_day = today - timedelta(days=HISTORY_DAYS)
 
-        try:
-            text = await self._client.async_fetch_csv(first_day, today)
-        except LinzNetzAuthError as err:
-            raise ConfigEntryAuthFailed(str(err)) from err
-        except LinzNetzError as err:
-            raise UpdateFailed(str(err)) from err
-
+        text = await self._client.async_fetch_csv(first_day, today)
         hours = await self.hass.async_add_executor_job(
             lambda: complete_hours(parse_quarter_hours(text))
         )

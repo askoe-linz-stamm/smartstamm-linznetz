@@ -16,7 +16,7 @@ async def test_wrong_password_then_success(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     login = {"username": " verein@example.at ", "password": "pw"}
 
-    with patch(FETCH, side_effect=LinzNetzAuthError("nope")):
+    with patch(FETCH, side_effect=LinzNetzAuthError("login-rejected", "nope")):
         result = await hass.config_entries.flow.async_configure(result["flow_id"], login)
     assert result["errors"] == {"base": "invalid_auth"}
 
