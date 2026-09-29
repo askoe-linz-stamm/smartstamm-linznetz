@@ -25,6 +25,18 @@ On a Home Assistant Green a run takes about one second. There are no Python depe
 
 If the portal rejects the password, Home Assistant asks for a new one (re-authentication).
 
+## Background
+
+SmartStamm first used the community integration [kart334/ha-linznetz-energy](https://github.com/kart334/ha-linznetz-energy) (2026-09-16 to 2026-09-28). It served as a pointer to the portal URL and its JSF/PrimeFaces structure. This integration is a new implementation; no code was taken from it. That repository has no license, so copying its code would not be allowed.
+
+The approach comes from analysing the portal on 2026-09-29:
+
+- The consumption page offers a CSV export for any date range. One export replaces the day-by-day table scraping (about four seconds per day) of the earlier integration.
+- The page is a Jakarta Faces application: AJAX parameters are named `jakarta.faces.*`, not `javax.faces.*`.
+- The export delivers the result that was last shown, not the dates in the export request. The period must therefore be shown ("Anzeigen") first.
+- Sign-in is a standard Keycloak form at `sso.linznetz.at`; the session lives in cookies.
+- The CSV uses Vienna local time without offset. In October the hour from 02:00 repeats and is resolved by row order.
+
 ## Development
 
 ```
