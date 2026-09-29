@@ -16,17 +16,10 @@ jobs:
           python-version: "3.14"
       - run: pip install -r requirements_test.txt
       - run: pytest -q
+  # The organisation allows only GitHub-owned actions, so hassfest runs as a plain step.
   hassfest:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
-      - uses: home-assistant/actions/hassfest@master
-  hacs:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: hacs/action@main
-        with:
-          category: integration
-          ignore: brands
+      - run: docker run --rm -v "$PWD":/github/workspace ghcr.io/home-assistant/hassfest
