@@ -44,6 +44,15 @@
     "sensor": {
       "data_until": {
         "name": "Daten bis"
+      },
+      "status": {
+        "name": "Status",
+        "state": {
+          "ok": "OK",
+          "portal_changed": "Portal verändert",
+          "login_rejected": "Anmeldung abgelehnt",
+          "connection_error": "Verbindungsfehler"
+        }
       }
     }
   }

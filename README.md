@@ -9,6 +9,7 @@ Linz Netz offers no API. The integration signs in to the [Serviceportal](https:/
 - `linznetz:energy_consumption`: hourly consumption in kWh (quarter hours summed to hours).
 - `linznetz:energy_cost`: hourly energy cost in EUR, if a price entity is set. Cost is kWh × the entity's current value in EUR/kWh at import time. No base fee, grid fees or taxes.
 - Sensor **Daten bis**: end of the newest imported hour. Linz Netz publishes values roughly once a day, so this usually lags by about a day.
+- Sensor **Status** (diagnostic): `ok`, `portal_changed`, `login_rejected` or `connection_error`. On errors the attributes `error_code` (a stable step name such as `export-link` or `csv-format`), `since` and `failed_runs` describe the current failure streak. `portal_changed` means the portal no longer works as expected, most likely after a redesign. Both sensors stay available when a run fails.
 
 ## Setup
 
