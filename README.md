@@ -32,3 +32,5 @@ python3.14 -m venv .venv
 .venv/bin/pip install -r requirements_test.txt
 .venv/bin/pytest
 ```
+
+CI runs the tests against the pinned Home Assistant on every push and once a month against the newest release. Dependabot opens monthly pull requests for the pinned test dependency and the GitHub Actions.
