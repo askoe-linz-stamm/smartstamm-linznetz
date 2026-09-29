@@ -1,0 +1,50 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "description": "Zugang zum Linz Netz Serviceportal. Dort müssen die Viertelstundenwerte aktiviert sein.",
+        "data": {
+          "username": "Benutzername",
+          "password": "Passwort",
+          "price_entity": "Energiepreis (EUR/kWh)"
+        },
+        "data_description": {
+          "price_entity": "Optional. Damit wird die Kostenstatistik berechnet."
+        }
+      },
+      "reauth_confirm": {
+        "description": "Das Portal hat das Passwort für {username} abgelehnt.",
+        "data": {
+          "password": "Passwort"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Benutzername oder Passwort falsch",
+      "cannot_connect": "Portal nicht erreichbar oder verändert"
+    },
+    "abort": {
+      "already_configured": "Dieses Konto ist bereits eingerichtet",
+      "reauth_successful": "Anmeldung erneuert"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "price_entity": "Energiepreis (EUR/kWh)"
+        },
+        "data_description": {
+          "price_entity": "Optional. Damit wird die Kostenstatistik berechnet."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "data_until": {
+        "name": "Daten bis"
+      }
+    }
+  }
+}

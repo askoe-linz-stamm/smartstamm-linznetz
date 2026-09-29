@@ -1,0 +1,50 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "description": "Login of the Linz Netz Serviceportal. Quarter-hour values must be activated there.",
+        "data": {
+          "username": "Username",
+          "password": "Password",
+          "price_entity": "Energy price (EUR/kWh)"
+        },
+        "data_description": {
+          "price_entity": "Optional. Used to calculate the cost statistic."
+        }
+      },
+      "reauth_confirm": {
+        "description": "The portal rejected the password for {username}.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid authentication",
+      "cannot_connect": "Failed to connect"
+    },
+    "abort": {
+      "already_configured": "Account is already configured",
+      "reauth_successful": "Re-authentication was successful"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "price_entity": "Energy price (EUR/kWh)"
+        },
+        "data_description": {
+          "price_entity": "Optional. Used to calculate the cost statistic."
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "data_until": {
+        "name": "Data until"
+      }
+    }
+  }
+}
