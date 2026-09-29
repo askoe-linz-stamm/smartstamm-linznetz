@@ -3,6 +3,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Monthly run against the newest Home Assistant to catch API changes before
+  # a Core update on the Green does. A failed run triggers GitHub's failure mail.
+  schedule:
+    - cron: "23 5 1 * *"
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -15,6 +20,10 @@ jobs:
         with:
           python-version: "3.14"
       - run: pip install -r requirements_test.txt
+      - name: Use the newest Home Assistant instead of the pinned one
+        if: github.event_name != 'push' && github.event_name != 'pull_request'
+        run: pip install --upgrade pytest-homeassistant-custom-component
+      - run: python -c "import homeassistant.const as c; print('Home Assistant', c.__version__)"
       - run: pytest -q
   # The organisation allows only GitHub-owned actions, so hassfest runs as a plain step.
   hassfest:
