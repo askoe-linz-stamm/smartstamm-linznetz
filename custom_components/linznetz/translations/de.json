@@ -45,6 +45,12 @@
       "data_until": {
         "name": "Daten bis"
       },
+      "last_successful_fetch": {
+        "name": "Letzter erfolgreicher Abruf"
+      },
+      "next_fetch": {
+        "name": "Nächster Abruf geplant"
+      },
       "status": {
         "name": "Status",
         "state": {

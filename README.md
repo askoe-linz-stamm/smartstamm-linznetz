@@ -9,7 +9,9 @@ Linz Netz offers no API. The integration signs in to the [Serviceportal](https:/
 - `linznetz:energy_consumption`: hourly consumption in kWh (quarter hours summed to hours).
 - `linznetz:energy_cost`: hourly energy cost in EUR, if a price entity is set. Cost is kWh × the entity's current value in EUR/kWh at import time. No base fee, grid fees or taxes.
 - Sensor **Daten bis**: end of the newest imported hour. Linz Netz publishes values roughly once a day, so this usually lags by about a day.
-- Sensor **Status** (diagnostic): `ok`, `portal_changed`, `login_rejected` or `connection_error`. On errors the attributes `error_code` (a stable step name such as `export-link` or `csv-format`), `since` and `failed_runs` describe the current failure streak. `portal_changed` means the portal no longer works as expected, most likely after a redesign. Both sensors stay available when a run fails.
+- Sensor **Letzter erfolgreicher Abruf**: completion time of the last successful fetch, even when the portal returned no newer values. It keeps its previous timestamp when a fetch fails.
+- Sensor **Nächster Abruf geplant**: estimated time of the next scheduled fetch, within about a second of Home Assistant's polling timer. It is unknown when polling is disabled or a rejected login requires re-authentication. A scheduled fetch does not guarantee new consumption data.
+- Sensor **Status** (diagnostic): `ok`, `portal_changed`, `login_rejected` or `connection_error`. On errors the attributes `error_code` (a stable step name such as `export-link` or `csv-format`), `since` and `failed_runs` describe the current failure streak. `portal_changed` means the portal no longer works as expected, most likely after a redesign. All sensors stay available when a run fails. The data horizon and last successful fetch are restored after a restart if the first fetch fails.
 
 ## Setup
 
@@ -25,6 +27,19 @@ Every six hours (and on startup) the integration makes four small requests: open
 On a Home Assistant Green a run takes about one second. There are no Python dependencies beyond Home Assistant itself.
 
 If the portal rejects the password, Home Assistant asks for a new one (re-authentication).
+
+## Show the data status on your overview
+
+The [status card](docs/dashboard-status-card.yaml) adds the data horizon, last successful fetch, next planned fetch and an explanation of Linz Netz's delayed data to a freely editable dashboard. It uses the built-in Markdown card and links to the existing Energy dashboard. It distinguishes a failed fetch from a successful fetch with no newer data, and does not treat missing consumption values as zero.
+
+1. Install this version of the integration and reload it or restart Home Assistant.
+2. Open the Linz Netz device under *Settings → Devices & services* and check the entity IDs of **Daten bis**, **Letzter erfolgreicher Abruf**, **Nächster Abruf geplant** and **Status**. Names and IDs can vary with the language or previous customisations.
+3. On a freely editable overview, add a **Manual** card and paste the contents of [dashboard-status-card.yaml](docs/dashboard-status-card.yaml).
+4. Replace the four IDs in `entity_id`, preserving their order. The template uses that list for both rendering and entity updates.
+
+This adds a single card. It does not replace the Energy dashboard or change its automatic **Heutige Energie** summary. An automatically managed dashboard that does not allow manual cards needs a separate editable dashboard. Do not take control of your existing overview just to add this card unless you want to stop its automatic updates.
+
+The timestamps display in Home Assistant's configured local time zone. **Daten bis** is the end of the newest imported hour, not a guarantee that every earlier hour is present. The status text describes today's imported values independently of the period selected in the Energy dashboard. Linz Netz documents [daily transmission of smart meter readings](https://www.linznetz.at/portal/de/home/wissenswertes/smart_meter).
 
 ## Background
 

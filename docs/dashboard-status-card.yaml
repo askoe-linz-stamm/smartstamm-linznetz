@@ -1,0 +1,42 @@
+# Add as one manual card to a freely editable dashboard.
+# Replace these four entity IDs with the IDs from your Linz Netz device.
+type: markdown
+title: Verbrauchsdaten von Linz Netz
+entity_id:
+  - sensor.linz_netz_stromzahler_data_until
+  - sensor.linz_netz_stromzahler_last_successful_fetch
+  - sensor.linz_netz_stromzahler_next_scheduled_fetch
+  - sensor.linz_netz_stromzahler_status
+content: |
+  {% macro format_time(entity_id) -%}
+    {% set value = as_datetime(states(entity_id), default=none) -%}
+    {{ as_local(value).strftime('%d.%m.%Y, %H:%M Uhr') if value is not none else 'Noch nicht verfügbar' }}
+  {%- endmacro %}
+  {% set until = as_datetime(states(config.entity_id[0]), default=none) %}
+  {% set status = states(config.entity_id[3]) %}
+  {% if status == 'login_rejected' %}
+  Die Anmeldung bei Linz Netz ist fehlgeschlagen. Bitte prüfe die Zugangsdaten der Integration.
+  {% elif status in ['portal_changed', 'connection_error'] %}
+  Der letzte Abruf ist fehlgeschlagen.
+  {% elif status != 'ok' %}
+  Der Abrufstatus ist derzeit nicht verfügbar.
+  {% elif until is none %}
+  Noch keine Verbrauchsdaten importiert.
+  {% elif as_local(until) <= today_at() %}
+  Für heute liegen noch keine Werte vor.
+  {% else %}
+  Für heute wurden bereits Verbrauchswerte importiert.
+  {% endif %}
+  {% if status != 'ok' and until is not none %}
+  Angezeigt werden die zuletzt erfolgreich importierten Daten.
+  {% endif %}
+
+  | Information | Zeitpunkt |
+  | :--- | ---: |
+  | Letzter erfolgreicher Abruf | {{ format_time(config.entity_id[1]) }} |
+  | Verbrauchsdaten bis | {{ format_time(config.entity_id[0]) }} |
+  | Nächster Abruf geplant | {{ format_time(config.entity_id[2]) if has_value(config.entity_id[2]) else 'Derzeit kein Abruf geplant' }} |
+
+  Linz Netz übermittelt Verbrauchsdaten täglich. Im Serviceportal stehen keine Live-Daten zur Verfügung. Beim nächsten Abruf prüfen wir, ob neuere Werte verfügbar sind.
+
+  [Energiedashboard öffnen](/energy)
