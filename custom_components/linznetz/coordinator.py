@@ -19,7 +19,7 @@ from homeassistant.components.recorder.statistics import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfEnergy
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -98,6 +98,34 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
         )
         self._client = client
         self.problem: Problem | None = None
+        self.last_successful_fetch: datetime | None = None
+        self.next_fetch: datetime | None = None
+
+    @callback
+    def _schedule_refresh(self) -> None:
+        """Expose the planned polling time, within the coordinator's subsecond jitter."""
+        if self.problem is not None and self.problem.kind == "login_rejected":
+            self._async_unsub_refresh()
+            return
+        super()._schedule_refresh()
+        interval = self.update_interval
+        self.next_fetch = (
+            dt_util.utcnow() + interval
+            if self._unsub_refresh is not None and interval is not None
+            else None
+        )
+
+    @callback
+    def _async_unsub_refresh(self) -> None:
+        """Clear the planned time when polling is cancelled or a fetch begins."""
+        super()._async_unsub_refresh()
+        self.next_fetch = None
+
+    @callback
+    def _async_refresh_finished(self) -> None:
+        """Publish the new schedule and error count even on repeated failures."""
+        if not self.last_update_success:
+            self.async_update_listeners()
 
     async def _async_update_data(self) -> datetime | None:
         try:
@@ -111,12 +139,11 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
                 since=previous.since if previous and streak else dt_util.utcnow(),
                 failed_runs=previous.failed_runs + 1 if previous and streak else 1,
             )
-            # The coordinator skips listeners on repeated failures; the count must still show.
-            self.async_update_listeners()
             if isinstance(err, LinzNetzAuthError):
                 raise ConfigEntryAuthFailed(str(err)) from err
             raise UpdateFailed(str(err)) from err
         self.problem = None
+        self.last_successful_fetch = dt_util.utcnow()
         return newest
 
     async def _async_fetch_and_import(self) -> datetime | None:

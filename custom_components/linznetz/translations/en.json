@@ -45,6 +45,12 @@
       "data_until": {
         "name": "Data until"
       },
+      "last_successful_fetch": {
+        "name": "Last successful fetch"
+      },
+      "next_fetch": {
+        "name": "Next scheduled fetch"
+      },
       "status": {
         "name": "Status",
         "state": {

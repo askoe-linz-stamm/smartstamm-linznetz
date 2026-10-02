@@ -10,7 +10,9 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .coordinator import LinzNetzConfigEntry, LinzNetzCoordinator
@@ -23,7 +25,14 @@ async def async_setup_entry(
 ) -> None:
     """Add the sensors."""
     coordinator = entry.runtime_data
-    async_add_entities([DataUntilSensor(coordinator), StatusSensor(coordinator)])
+    async_add_entities(
+        [
+            DataUntilSensor(coordinator),
+            LastSuccessfulFetchSensor(coordinator),
+            NextFetchSensor(coordinator),
+            StatusSensor(coordinator),
+        ]
+    )
 
 
 class _LinzNetzSensor(CoordinatorEntity[LinzNetzCoordinator], SensorEntity):
@@ -48,7 +57,7 @@ class _LinzNetzSensor(CoordinatorEntity[LinzNetzCoordinator], SensorEntity):
         return True
 
 
-class DataUntilSensor(_LinzNetzSensor):
+class DataUntilSensor(_LinzNetzSensor, RestoreEntity):
     """End of the newest hour in the statistics; unknown before the first value."""
 
     _attr_device_class = SensorDeviceClass.TIMESTAMP
@@ -56,9 +65,53 @@ class DataUntilSensor(_LinzNetzSensor):
     def __init__(self, coordinator: LinzNetzCoordinator) -> None:
         super().__init__(coordinator, "data_until")
 
+    async def async_added_to_hass(self) -> None:
+        """Keep the previous data horizon if the first fetch after a restart fails."""
+        if not self.coordinator.last_update_success and self.coordinator.data is None:
+            if previous := await self.async_get_last_state():
+                restored = dt_util.parse_datetime(previous.state)
+                if restored is not None and restored.tzinfo is not None:
+                    self.coordinator.data = restored
+        await super().async_added_to_hass()
+
     @property
     def native_value(self) -> datetime | None:
         return self.coordinator.data
+
+
+class LastSuccessfulFetchSensor(_LinzNetzSensor, RestoreEntity):
+    """Completion time of the last successful fetch, including unchanged exports."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, coordinator: LinzNetzCoordinator) -> None:
+        super().__init__(coordinator, "last_successful_fetch")
+
+    async def async_added_to_hass(self) -> None:
+        """Retain the last success when the portal is unavailable after a restart."""
+        if self.coordinator.last_successful_fetch is None:
+            if previous := await self.async_get_last_state():
+                restored = dt_util.parse_datetime(previous.state)
+                if restored is not None and restored.tzinfo is not None:
+                    self.coordinator.last_successful_fetch = restored
+        await super().async_added_to_hass()
+
+    @property
+    def native_value(self) -> datetime | None:
+        return self.coordinator.last_successful_fetch
+
+
+class NextFetchSensor(_LinzNetzSensor):
+    """Planned polling time; unknown when no periodic fetch is scheduled."""
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, coordinator: LinzNetzCoordinator) -> None:
+        super().__init__(coordinator, "next_fetch")
+
+    @property
+    def native_value(self) -> datetime | None:
+        return self.coordinator.next_fetch
 
 
 class StatusSensor(_LinzNetzSensor):
