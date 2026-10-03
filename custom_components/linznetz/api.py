@@ -11,10 +11,12 @@ import csv
 from datetime import UTC, date, datetime
 from html import unescape
 import io
+import logging
 import re
+from typing import Literal
 from zoneinfo import ZoneInfo
 
-from aiohttp import ClientError, ClientResponseError, ClientSession, ClientTimeout
+from aiohttp import ClientError, ClientResponse, ClientResponseError, ClientSession, ClientTimeout
 
 PORTAL_URL = "https://services.linznetz.at/verbrauchsdateninformation/consumption.jsf"
 VIENNA = ZoneInfo("Europe/Vienna")
@@ -33,6 +35,12 @@ _KIND_FIELD_RE = re.compile(r'name="(myForm1:[^"]*grid_eval:selectedClass)"')
 _UNIT_FIELD_RE = re.compile(r'name="(myForm1:[^"]*:selectedClass)"[^>]*value="KWH"')
 _EXPORT_RE = re.compile(r'id="(myForm1:exportAreaID:[^"]+)"')
 _CSV_HEADER = ["Datum von", "Datum bis", "Energiemenge in kWh"]
+_LOGGER = logging.getLogger(__name__)
+_RequestStep = Literal["open", "login", "switch", "show", "export"]
+_CONTENT_TYPES = {
+    "text/html", "application/xhtml+xml", "text/xml", "application/xml",
+    "text/csv", "application/csv", "text/plain", "application/octet-stream",
+}
 
 
 class LinzNetzError(Exception):
@@ -68,9 +76,25 @@ class LinzNetzClient:
         self._session = session
         self._username = username
         self._password = password
+        self._step: _RequestStep = "open"
+        self._response_summary: str | None = None
 
     async def async_fetch_csv(self, first_day: date, last_day: date) -> str:
         """Return the portal CSV export for both days inclusive."""
+        self._step = "open"
+        self._response_summary = None
+        try:
+            return await self._async_fetch_csv(first_day, last_day)
+        except LinzNetzError as err:
+            # Only fixed labels, numbers and presence flags. Never log the
+            # exception text, URLs, headers, cookies or portal/CSV contents.
+            _LOGGER.warning(
+                "Portal fetch failed: code=%s step=%s response={%s}",
+                err.code, self._step, self._response_summary or "unavailable",
+            )
+            raise
+
+    async def _async_fetch_csv(self, first_day: date, last_day: date) -> str:
         try:
             page = await self._async_open_portal()
             view_state = _view_state(page)
@@ -78,6 +102,7 @@ class LinzNetzClient:
 
             switched = await self._async_ajax(
                 view_state,
+                step="switch",
                 source=kind_field,
                 execute=kind_field,
                 render=_FORM,
@@ -95,6 +120,7 @@ class LinzNetzClient:
             # The export always delivers the last result shown, so show it first.
             shown = await self._async_ajax(
                 view_state,
+                step="show",
                 source=_SHOW_BUTTON,
                 execute=_FORM,
                 render=f"{_FORM}:list",
@@ -104,15 +130,18 @@ class LinzNetzClient:
             # The first export link is CSV; the others are XML and MSCONS.
             export = _find(_EXPORT_RE, shown, "export-link", "CSV-Export")
 
+            self._step = "export"
+            self._response_summary = None
             async with self._session.post(
                 PORTAL_URL,
                 data={_FORM: _FORM, "jakarta.faces.ViewState": view_state, **fields, export: export},
                 timeout=_TIMEOUT,
             ) as response:
+                self._response_summary = _response_summary(response)
                 response.raise_for_status()
                 if ".csv" not in response.headers.get("Content-Disposition", ""):
                     raise LinzNetzError("not-csv", "Portal lieferte keine CSV-Datei")
-                return await response.text(encoding="utf-8")
+                return await self._async_read_response(response, encoding="utf-8")
         except ClientResponseError as err:
             # A missing page or form points to a redesign, server errors do not.
             if err.status < 500:
@@ -124,19 +153,19 @@ class LinzNetzClient:
     async def _async_open_portal(self) -> str:
         """Load the consumption page and sign in first when the session expired."""
         async with self._session.get(PORTAL_URL, timeout=_TIMEOUT) as response:
-            response.raise_for_status()
-            page = await response.text()
+            page = await self._async_read_response(response)
         login = _LOGIN_FORM_RE.search(page)
         if login is None:
             return page
 
+        self._step = "login"
+        self._response_summary = None
         async with self._session.post(
             unescape(login.group(1)),
             data={"username": self._username, "password": self._password},
             timeout=_TIMEOUT,
         ) as response:
-            response.raise_for_status()
-            page = await response.text()
+            page = await self._async_read_response(response)
         if _LOGIN_FORM_RE.search(page):
             raise LinzNetzAuthError("login-rejected", "Anmeldung abgelehnt")
         return page
@@ -145,6 +174,7 @@ class LinzNetzClient:
         self,
         view_state: str,
         *,
+        step: Literal["switch", "show"],
         source: str,
         execute: str,
         render: str,
@@ -162,11 +192,52 @@ class LinzNetzClient:
         }
         if event is not None:
             data["jakarta.faces.behavior.event"] = event
+        self._step = step
+        self._response_summary = None
         async with self._session.post(
             PORTAL_URL, data=data, headers=_AJAX_HEADERS, timeout=_TIMEOUT
         ) as response:
-            response.raise_for_status()
-            return await response.text()
+            return await self._async_read_response(response)
+
+    async def _async_read_response(
+        self, response: ClientResponse, *, encoding: str | None = None
+    ) -> str:
+        """Keep safe metadata even if the status check or body read fails."""
+        self._response_summary = _response_summary(response)
+        response.raise_for_status()
+        text = await response.text(encoding=encoding)
+        self._response_summary = _response_summary(response, text)
+        return text
+
+
+def _response_summary(response: ClientResponse, text: str | None = None) -> str:
+    """Describe the response using an allowlist, never response-owned strings."""
+    content_type = response.content_type
+    if content_type not in _CONTENT_TYPES:
+        content_type = "other"
+    target = "other"
+    if response.url.host == "sso.linznetz.at":
+        target = "sso"
+    elif (
+        response.url.host == "services.linznetz.at"
+        and response.url.path == "/verbrauchsdateninformation/consumption.jsf"
+    ):
+        target = "consumption"
+    summary = (
+        f"http_status={response.status} content_type={content_type} "
+        f"target={target} redirects={len(response.history)} body_read={text is not None}"
+    )
+    if text is None:
+        return summary
+    return (
+        f"{summary} body_chars={len(text)} "
+        f"login_form={_LOGIN_FORM_RE.search(text) is not None} "
+        f"view_state={_VIEW_STATE_RE.search(text) is not None} "
+        f"kind_field={_KIND_FIELD_RE.search(text) is not None} "
+        f"unit_field={_UNIT_FIELD_RE.search(text) is not None} "
+        f"export_link={_EXPORT_RE.search(text) is not None} "
+        f"partial_response={re.search(r'<partial-response(?:\s|>)', text) is not None}"
+    )
 
 
 def _find(pattern: re.Pattern[str], text: str, code: str, what: str) -> str:
@@ -223,4 +294,3 @@ def complete_hours(readings: dict[datetime, float]) -> list[tuple[datetime, floa
         for hour, values in sorted(hours.items())
         if len(values) == 4
     ]
-

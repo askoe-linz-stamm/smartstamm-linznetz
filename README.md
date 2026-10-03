@@ -40,6 +40,28 @@ The approach comes from analysing the portal on 2026-09-29:
 
 ## Development
 
+### Investigating failed portal fetches
+
+Each failed fetch writes a warning from `custom_components.linznetz.api` with
+the stable error code and request step (`open`, `login`, `switch`, `show` or
+`export`). The response summary records the HTTP status, an allowlisted content
+type, whether the final destination is the consumption page, SSO or another
+page, and the number of redirects. If the body was read, it also records its
+character count and the presence of the expected login form, ViewState,
+quarter-hour selection, unit field, export link and partial AJAX response.
+`response={unavailable}` means the request failed before a response arrived.
+
+The warning contains no URLs, header values, cookies, credentials, portal text
+or consumption readings. Successful fetches produce no diagnostic warning.
+These summaries help compare failures after the portal starts working again;
+they do not capture the original page or prove the cause by themselves.
+
+Find the warnings under *Settings → System → Logs*, using the full log when
+needed. Home Assistant OS stores Core logs in its system journal. Their
+retention depends on the host, so export relevant logs promptly. The compact
+error list is limited and is not a permanent archive. See Home Assistant's
+[logging documentation](https://www.home-assistant.io/common-tasks/os/#enable-duplicate-log-file).
+
 ```
 python3.14 -m venv .venv
 .venv/bin/pip install -r requirements_test.txt
