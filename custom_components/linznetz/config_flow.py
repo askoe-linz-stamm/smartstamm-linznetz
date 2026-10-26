@@ -1,4 +1,4 @@
-"""Setup, re-authentication and price option for Linz Netz."""
+"""Setup, re-authentication and cost options for Linz Netz."""
 
 from __future__ import annotations
 
@@ -27,10 +27,15 @@ from homeassistant.helpers.selector import (
 from homeassistant.util import dt as dt_util
 
 from .api import LinzNetzAuthError, LinzNetzClient, LinzNetzError
-from .const import CONF_PRICE_ENTITY, DOMAIN
+from .const import CONF_FIXED_COST_ENTITY, CONF_PRICE_ENTITY, DOMAIN
 
 _PASSWORD = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
-_PRICE = EntitySelector(EntitySelectorConfig(domain=["input_number", "sensor"]))
+_NUMBER_ENTITY = EntitySelector(EntitySelectorConfig(domain=["input_number", "sensor"]))
+# Optional entities for the cost statistic, offered in setup and options.
+_COST_FIELDS = {
+    vol.Optional(CONF_PRICE_ENTITY): _NUMBER_ENTITY,
+    vol.Optional(CONF_FIXED_COST_ENTITY): _NUMBER_ENTITY,
+}
 
 
 async def _async_check_login(hass: HomeAssistant, username: str, password: str) -> str | None:
@@ -50,7 +55,7 @@ async def _async_check_login(hass: HomeAssistant, username: str, password: str) 
 
 
 class LinzNetzConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Asks for the Serviceportal login and an optional price entity."""
+    """Asks for the Serviceportal login and the optional cost entities."""
 
     VERSION = 1
 
@@ -62,11 +67,14 @@ class LinzNetzConfigFlow(ConfigFlow, domain=DOMAIN):
             self._abort_if_unique_id_configured()
             error = await _async_check_login(self.hass, username, user_input[CONF_PASSWORD])
             if error is None:
-                price = user_input.get(CONF_PRICE_ENTITY)
                 return self.async_create_entry(
                     title=username,
                     data={CONF_USERNAME: username, CONF_PASSWORD: user_input[CONF_PASSWORD]},
-                    options={CONF_PRICE_ENTITY: price} if price else {},
+                    options={
+                        key: user_input[key]
+                        for key in (CONF_PRICE_ENTITY, CONF_FIXED_COST_ENTITY)
+                        if user_input.get(key)
+                    },
                 )
             errors["base"] = error
 
@@ -74,7 +82,7 @@ class LinzNetzConfigFlow(ConfigFlow, domain=DOMAIN):
             {
                 vol.Required(CONF_USERNAME): str,
                 vol.Required(CONF_PASSWORD): _PASSWORD,
-                vol.Optional(CONF_PRICE_ENTITY): _PRICE,
+                **_COST_FIELDS,
             }
         )
         return self.async_show_form(
@@ -113,12 +121,12 @@ class LinzNetzConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class LinzNetzOptionsFlow(OptionsFlowWithReload):
-    """Changes the price entity used for the cost statistic."""
+    """Changes the entities used for the cost statistic."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             return self.async_create_entry(data=user_input)
-        schema = vol.Schema({vol.Optional(CONF_PRICE_ENTITY): _PRICE})
+        schema = vol.Schema(_COST_FIELDS)
         return self.async_show_form(
             step_id="init",
             data_schema=self.add_suggested_values_to_schema(schema, self.config_entry.options),

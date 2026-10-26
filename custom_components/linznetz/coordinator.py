@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import logging
+import math
 
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.models import (
@@ -26,6 +28,7 @@ from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import EnergyConverter
 
 from .api import (
+    VIENNA,
     LinzNetzAuthError,
     LinzNetzClient,
     LinzNetzError,
@@ -33,6 +36,7 @@ from .api import (
     parse_quarter_hours,
 )
 from .const import (
+    CONF_FIXED_COST_ENTITY,
     CONF_PRICE_ENTITY,
     CONSUMPTION_STATISTIC,
     COST_STATISTIC,
@@ -64,6 +68,18 @@ _COST_META = StatisticMetaData(
     unit_class=None,
     unit_of_measurement="EUR",
 )
+
+
+def hourly_cost(start: datetime, kwh: float, price: float, fixed_per_year: float) -> float:
+    """Cost in EUR of the hour starting at ``start``.
+
+    Energy at ``price`` EUR/kWh plus an even share of the yearly fixed costs. The
+    share depends on the Vienna calendar year of the hour (8760 or 8784 hours), so
+    a full year of imported hours adds up to exactly ``fixed_per_year``.
+    """
+    year = start.astimezone(VIENNA).year
+    hours_in_year = 8784 if calendar.isleap(year) else 8760
+    return kwh * price + fixed_per_year / hours_in_year
 
 
 @dataclass(frozen=True)
@@ -184,13 +200,14 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
             consumption.append(StatisticData(start=start, sum=round(consumption_sum, 3)))
         async_add_external_statistics(self.hass, _CONSUMPTION_META, consumption)
 
-        price = self._price()
-        if price is None:
+        cost_inputs = self._cost_inputs()
+        if cost_inputs is None:
             return
+        price, fixed_per_year = cost_inputs
         cost_sum = await self._async_sum_before(COST_STATISTIC, window_start)
         cost: list[StatisticData] = []
         for start, kwh in hours:
-            cost_sum += kwh * price
+            cost_sum += hourly_cost(start, kwh, price, fixed_per_year)
             cost.append(StatisticData(start=start, sum=round(cost_sum, 4)))
         async_add_external_statistics(self.hass, _COST_META, cost)
 
@@ -209,14 +226,37 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
         values = rows.get(statistic_id)
         return (values[-1].get("sum") or 0.0) if values else 0.0
 
-    def _price(self) -> float | None:
-        """Energy price in EUR/kWh from the configured entity, if usable."""
-        entity_id = self.config_entry.options.get(CONF_PRICE_ENTITY)
-        if not entity_id:
+    def _cost_inputs(self) -> tuple[float, float] | None:
+        """Price in EUR/kWh and fixed costs in EUR/year from the configured entities.
+
+        An entity that is not configured counts as 0. Returns None when neither is
+        configured or a configured one has no usable value: the run then skips the
+        cost statistic and keeps the existing values instead of writing a partial cost.
+        """
+        options = self.config_entry.options
+        price_entity = options.get(CONF_PRICE_ENTITY)
+        fixed_entity = options.get(CONF_FIXED_COST_ENTITY)
+        if not price_entity and not fixed_entity:
             return None
+        price = self._number(price_entity) if price_entity else 0.0
+        fixed_per_year = self._number(fixed_entity) if fixed_entity else 0.0
+        if price is None or fixed_per_year is None:
+            return None
+        return price, fixed_per_year
+
+    def _number(self, entity_id: str) -> float | None:
+        """Finite numeric state of ``entity_id``, or None if missing or not a number.
+
+        NaN or infinity would corrupt the running cost sum, so they count as unusable.
+        """
         state = self.hass.states.get(entity_id)
-        try:
-            return float(state.state) if state is not None else None
-        except ValueError:
-            _LOGGER.warning("Preis aus %s ist keine Zahl, Kosten übersprungen", entity_id)
+        if state is None:
             return None
+        try:
+            value = float(state.state)
+        except ValueError:
+            value = math.nan
+        if not math.isfinite(value):
+            _LOGGER.warning("Wert aus %s ist keine Zahl, Kosten übersprungen", entity_id)
+            return None
+        return value

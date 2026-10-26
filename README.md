@@ -7,7 +7,7 @@ Linz Netz offers no API. The integration signs in to the [Serviceportal](https:/
 ## What you get
 
 - `linznetz:energy_consumption`: hourly consumption in kWh (quarter hours summed to hours).
-- `linznetz:energy_cost`: hourly energy cost in EUR, if a price entity is set. Cost is kWh × the entity's current value in EUR/kWh at import time. No base fee, grid fees or taxes.
+- `linznetz:energy_cost`: hourly cost in EUR, if a price entity, a fixed cost entity or both are set. Each hour costs kWh × the price in EUR/kWh plus the fixed costs per year divided by the hours of that year in Vienna local time (8760, or 8784 in a leap year). Both values are read at import time. Only imported hours carry a share of the fixed costs; hours missing in the portal add none. If a set entity has no numeric value, the run skips the cost statistic and keeps the existing values.
 - Sensor **Daten bis**: end of the newest imported hour. Linz Netz publishes values roughly once a day, so this usually lags by about a day.
 - Sensor **Letzter erfolgreicher Abruf**: completion time of the last successful fetch, even when the portal returned no newer values. It keeps its previous timestamp when a fetch fails.
 - Sensor **Nächster Abruf geplant**: estimated time of the next scheduled fetch, within about a second of Home Assistant's polling timer. It is unknown when polling is disabled or a rejected login requires re-authentication. A scheduled fetch does not guarantee new consumption data.
@@ -17,7 +17,7 @@ Linz Netz offers no API. The integration signs in to the [Serviceportal](https:/
 
 1. Activate quarter-hour values (*Viertelstundenwerte aktivieren*) in the Serviceportal.
 2. Install through HACS: add `https://github.com/askoe-linz-stamm/smartstamm-linznetz` as a custom repository (type *Integration*), download **Linz Netz**, restart Home Assistant.
-3. Add the integration **Linz Netz** with the portal login. Optionally choose an energy price entity (for example an `input_number` in EUR/kWh); it can be changed later under *Configure*.
+3. Add the integration **Linz Netz** with the portal login. Optionally choose an energy price entity (for example an `input_number` in EUR/kWh) and a fixed cost entity holding the yearly sum of base fees and flat charges in EUR, including VAT. Both can be changed later under *Configure*.
 4. In *Settings → Dashboards → Energy*, add a grid consumption source with the statistic **Linz Netz Stromverbrauch** and, for costs, **Linz Netz Energiekosten**.
 
 ## How it works

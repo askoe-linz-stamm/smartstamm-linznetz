@@ -6,10 +6,12 @@
         "data": {
           "username": "Benutzername",
           "password": "Passwort",
-          "price_entity": "Energiepreis (EUR/kWh)"
+          "price_entity": "Energiepreis (EUR/kWh)",
+          "fixed_cost_entity": "Fixkosten pro Jahr (EUR)"
         },
         "data_description": {
-          "price_entity": "Optional. Damit wird die Kostenstatistik berechnet."
+          "price_entity": "Optional. Damit wird die Kostenstatistik berechnet.",
+          "fixed_cost_entity": "Optional. Summe aller Grundgebühren und Pauschalen pro Jahr inkl. USt. Wird gleichmäßig auf die Stunden verteilt und zur Kostenstatistik addiert."
         }
       },
       "reauth_confirm": {
@@ -32,10 +34,12 @@
     "step": {
       "init": {
         "data": {
-          "price_entity": "Energiepreis (EUR/kWh)"
+          "price_entity": "Energiepreis (EUR/kWh)",
+          "fixed_cost_entity": "Fixkosten pro Jahr (EUR)"
         },
         "data_description": {
-          "price_entity": "Optional. Damit wird die Kostenstatistik berechnet."
+          "price_entity": "Optional. Damit wird die Kostenstatistik berechnet.",
+          "fixed_cost_entity": "Optional. Summe aller Grundgebühren und Pauschalen pro Jahr inkl. USt. Wird gleichmäßig auf die Stunden verteilt und zur Kostenstatistik addiert."
         }
       }
     }
