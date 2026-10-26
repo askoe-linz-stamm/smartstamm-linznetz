@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 from freezegun.api import FrozenDateTimeFactory
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.components.recorder.common import (
     async_wait_recording_done,
@@ -11,11 +12,13 @@ from pytest_homeassistant_custom_component.components.recorder.common import (
 
 from custom_components.linznetz.api import LinzNetzError
 from custom_components.linznetz.const import (
+    CONF_FIXED_COST_ENTITY,
     CONF_PRICE_ENTITY,
     CONSUMPTION_STATISTIC,
     COST_STATISTIC,
     DOMAIN,
 )
+from custom_components.linznetz.coordinator import hourly_cost
 from homeassistant.components.recorder.statistics import statistics_during_period
 from homeassistant.core import HomeAssistant
 
@@ -100,3 +103,46 @@ async def test_status_reports_lasting_portal_change(
     assert state.attributes["failed_runs"] == 2
     # The statistics did not change, so the last import time stays visible.
     assert hass.states.get(data_until).state == "2026-09-19T23:00:00+00:00"
+
+
+@pytest.mark.parametrize(
+    ("start", "expected"),
+    [
+        (datetime(2026, 7, 1, 10, tzinfo=UTC), 2 * 0.25 + 876 / 8760),
+        (datetime(2028, 7, 1, 10, tzinfo=UTC), 2 * 0.25 + 876 / 8784),
+        # 23:00 UTC on New Year's Eve is already the first hour of leap year 2028 in Vienna.
+        (datetime(2027, 12, 31, 23, tzinfo=UTC), 2 * 0.25 + 876 / 8784),
+    ],
+)
+def test_hourly_cost_spreads_fixed_costs_over_the_vienna_year(
+    start: datetime, expected: float
+) -> None:
+    assert hourly_cost(start, 2, 0.25, 876) == pytest.approx(expected)
+
+
+async def test_fixed_costs_without_price_entity(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    await hass.config.async_set_time_zone("Europe/Vienna")
+    freezer.move_to("2026-09-21 12:00:00+02:00")
+    hass.states.async_set("input_number.fixed", "8760")  # 1 EUR per hour in 2026
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"username": "verein", "password": "secret"},
+        options={CONF_FIXED_COST_ENTITY: "input_number.fixed"},
+    )
+    entry.add_to_hass(hass)
+    fetch = AsyncMock(return_value=portal_csv(START, [0.25] * 8))
+
+    with patch("custom_components.linznetz.api.LinzNetzClient.async_fetch_csv", fetch):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        assert await _sums(hass, COST_STATISTIC) == [1.0, 2.0]
+
+        # An unusable value skips the cost statistic instead of writing a partial cost.
+        hass.states.async_set("input_number.fixed", "unavailable")
+        fetch.return_value = portal_csv(START, [0.25] * 12)
+        await entry.runtime_data.async_refresh()
+
+    assert await _sums(hass, CONSUMPTION_STATISTIC) == [1.0, 2.0, 3.0]
+    assert await _sums(hass, COST_STATISTIC) == [1.0, 2.0]

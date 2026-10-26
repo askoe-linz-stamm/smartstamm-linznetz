@@ -6,10 +6,12 @@
         "data": {
           "username": "Username",
           "password": "Password",
-          "price_entity": "Energy price (EUR/kWh)"
+          "price_entity": "Energy price (EUR/kWh)",
+          "fixed_cost_entity": "Fixed costs per year (EUR)"
         },
         "data_description": {
-          "price_entity": "Optional. Used to calculate the cost statistic."
+          "price_entity": "Optional. Used to calculate the cost statistic.",
+          "fixed_cost_entity": "Optional. Yearly sum of all base fees and flat charges incl. VAT. Spread evenly over the hours and added to the cost statistic."
         }
       },
       "reauth_confirm": {
@@ -32,10 +34,12 @@
     "step": {
       "init": {
         "data": {
-          "price_entity": "Energy price (EUR/kWh)"
+          "price_entity": "Energy price (EUR/kWh)",
+          "fixed_cost_entity": "Fixed costs per year (EUR)"
         },
         "data_description": {
-          "price_entity": "Optional. Used to calculate the cost statistic."
+          "price_entity": "Optional. Used to calculate the cost statistic.",
+          "fixed_cost_entity": "Optional. Yearly sum of all base fees and flat charges incl. VAT. Spread evenly over the hours and added to the cost statistic."
         }
       }
     }

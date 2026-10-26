@@ -5,6 +5,8 @@ from datetime import timedelta
 DOMAIN = "linznetz"
 
 CONF_PRICE_ENTITY = "price_entity"
+# Entity whose state is the total of all fixed costs in EUR per year.
+CONF_FIXED_COST_ENTITY = "fixed_cost_entity"
 
 CONSUMPTION_STATISTIC = f"{DOMAIN}:energy_consumption"
 COST_STATISTIC = f"{DOMAIN}:energy_cost"
