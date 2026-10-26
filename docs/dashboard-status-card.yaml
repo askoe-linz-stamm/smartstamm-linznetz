@@ -3,9 +3,9 @@
 type: markdown
 title: Verbrauchsdaten von Linz Netz
 entity_id:
-  - sensor.linz_netz_stromzahler_data_until
-  - sensor.linz_netz_stromzahler_last_successful_fetch
-  - sensor.linz_netz_stromzahler_next_scheduled_fetch
+  - sensor.linz_netz_stromzahler_daten_bis
+  - sensor.linz_netz_stromzahler_letzter_erfolgreicher_abruf
+  - sensor.linz_netz_stromzahler_nachster_abruf_geplant
   - sensor.linz_netz_stromzahler_status
 content: |
   {% macro format_time(entity_id) -%}
@@ -37,6 +37,6 @@ content: |
   | Verbrauchsdaten bis | {{ format_time(config.entity_id[0]) }} |
   | Nächster Abruf geplant | {{ format_time(config.entity_id[2]) if has_value(config.entity_id[2]) else 'Derzeit kein Abruf geplant' }} |
 
-  Linz Netz übermittelt Verbrauchsdaten täglich. Im Serviceportal stehen keine Live-Daten zur Verfügung. Beim nächsten Abruf prüfen wir, ob neuere Werte verfügbar sind.
+  Linz Netz übermittelt Verbrauchsdaten täglich. Im Serviceportal stehen keine Live-Daten zur Verfügung.{% if has_value(config.entity_id[2]) %} Beim nächsten Abruf prüfen wir, ob neuere Werte verfügbar sind.{% endif %}
 
   [Energiedashboard öffnen](/energy)

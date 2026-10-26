@@ -151,7 +151,7 @@ async def test_restore_timestamps_without_overwriting_a_new_success(
     )
 
 
-async def test_successful_empty_export_does_not_restore_old_consumption(
+async def test_successful_empty_export_does_not_restore_old_data_horizon(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     freezer.move_to("2026-09-21 06:00:00+00:00")

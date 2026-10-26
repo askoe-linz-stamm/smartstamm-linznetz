@@ -26,14 +26,14 @@ Every six hours (and on startup) the integration makes four small requests: open
 
 On a Home Assistant Green a run takes about one second. There are no Python dependencies beyond Home Assistant itself.
 
-If the portal rejects the password, Home Assistant asks for a new one (re-authentication).
+If the portal rejects the password, Home Assistant asks for a new one (re-authentication). Until then the integration does not fetch, so a wrong password is not retried every six hours.
 
 ## Show the data status on your overview
 
 The [status card](docs/dashboard-status-card.yaml) adds the data horizon, last successful fetch, next planned fetch and an explanation of Linz Netz's delayed data to a freely editable dashboard. It uses the built-in Markdown card and links to the existing Energy dashboard. It distinguishes a failed fetch from a successful fetch with no newer data, and does not treat missing consumption values as zero.
 
 1. Install this version of the integration and reload it or restart Home Assistant.
-2. Open the Linz Netz device under *Settings → Devices & services* and check the entity IDs of **Daten bis**, **Letzter erfolgreicher Abruf**, **Nächster Abruf geplant** and **Status**. Names and IDs can vary with the language or previous customisations.
+2. Open the Linz Netz device under *Settings → Devices & services* and check the entity IDs of **Daten bis**, **Letzter erfolgreicher Abruf**, **Nächster Abruf geplant** and **Status**. On a German Home Assistant they are `sensor.linz_netz_stromzahler_daten_bis`, `..._letzter_erfolgreicher_abruf`, `..._nachster_abruf_geplant` and `..._status`, as in the card. Instances set up in English or with renamed entities have other IDs.
 3. On a freely editable overview, add a **Manual** card and paste the contents of [dashboard-status-card.yaml](docs/dashboard-status-card.yaml).
 4. Replace the four IDs in `entity_id`, preserving their order. The template uses that list for both rendering and entity updates.
 

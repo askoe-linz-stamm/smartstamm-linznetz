@@ -103,7 +103,11 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
 
     @callback
     def _schedule_refresh(self) -> None:
-        """Expose the planned polling time, within the coordinator's subsecond jitter."""
+        """Expose the planned polling time, within about a second of the polling timer.
+
+        Overrides a private DataUpdateCoordinator hook, like ``_async_unsub_refresh``
+        below; the schedule and login tests guard against changes in Home Assistant.
+        """
         if self.problem is not None and self.problem.kind == "login_rejected":
             self._async_unsub_refresh()
             return
