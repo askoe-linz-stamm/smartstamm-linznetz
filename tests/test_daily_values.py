@@ -96,9 +96,11 @@ async def test_daily_values_then_quarter_hours(
         )
         assert ir.async_get(hass).async_get_issue(*issue) is not None
 
-        # A run without values keeps the horizon at the end of the newest day.
+        # A run without values keeps the horizon at the end of the newest day,
+        # also right after a reload.
         fetch.return_value = ""
-        await entry.runtime_data.async_refresh()
+        assert await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
         assert hass.states.get("sensor.linz_netz_stromzahler_data_until").state == (
             "2026-10-25T23:00:00+00:00"
         )

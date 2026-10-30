@@ -177,14 +177,22 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
     async def _async_fetch_and_import(self) -> datetime | None:
         recorder = get_instance(self.hass)
         last = await recorder.async_add_executor_job(
-            get_last_statistics, self.hass, 1, CONSUMPTION_STATISTIC, False, {"sum"}
+            get_last_statistics, self.hass, 2, CONSUMPTION_STATISTIC, False, {"sum"}
         )
         today = dt_util.now().date()
+        horizon: datetime | None = None
         if rows := last.get(CONSUMPTION_STATISTIC):
             newest = dt_util.utc_from_timestamp(rows[0]["start"])
-            first_day = dt_util.as_local(newest).date() - timedelta(days=REFETCH_DAYS)
+            local = dt_util.as_local(newest)
+            first_day = local.date() - timedelta(days=REFETCH_DAYS)
+            horizon = newest + timedelta(hours=1)
+            # A daily value sits at local midnight, a day after the row before it,
+            # and covers that whole day.
+            if len(rows) > 1 and local.hour == 0 and (
+                newest - dt_util.utc_from_timestamp(rows[1]["start"]) > timedelta(hours=1)
+            ):
+                horizon = dt_util.start_of_local_day(local.date() + timedelta(days=1))
         else:
-            newest = None
             first_day = today - timedelta(days=HISTORY_DAYS)
 
         text = await self._client.async_fetch_csv(first_day, today)
@@ -192,8 +200,7 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
         notice = "no_data" if not text else "daily_only" if is_daily_export(text) else None
         self._set_notice(notice)
         if not periods:
-            # Keep the known horizon: after daily values it is a day past ``newest``.
-            return self.data or (None if newest is None else newest + timedelta(hours=1))
+            return horizon
 
         await self._async_import(periods)
         start, _, hours = periods[-1]
