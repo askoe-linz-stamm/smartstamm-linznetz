@@ -21,6 +21,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: LinzNetzConfigEntry) -> 
         entry.data[CONF_PASSWORD],
     )
     coordinator = LinzNetzCoordinator(hass, entry, client)
+    entry.async_on_unload(lambda: coordinator._set_notice(None))
     # A failed first run must not block setup: the status sensor has to exist
     # to report a changed portal, and a rejected login starts re-authentication.
     await coordinator.async_refresh()

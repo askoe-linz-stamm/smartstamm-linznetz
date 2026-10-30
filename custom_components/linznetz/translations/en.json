@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "description": "Login of the Linz Netz Serviceportal. Quarter-hour values must be activated there.",
+        "description": "Linz Netz Serviceportal login. Hourly values need quarter-hour values enabled in the portal; otherwise daily values are imported.",
         "data": {
           "username": "Username",
           "password": "Password",
@@ -59,11 +59,23 @@
         "name": "Status",
         "state": {
           "ok": "OK",
+          "no_data": "No values yet",
+          "daily_only": "Daily values only",
           "portal_changed": "Portal changed",
           "login_rejected": "Login rejected",
           "connection_error": "Connection error"
         }
       }
+    }
+  },
+  "issues": {
+    "no_data": {
+      "title": "Linz Netz: no consumption values yet",
+      "description": "The Serviceportal has no consumption values yet. After registering, the first values arrive the next day from about noon at the earliest. The integration imports them automatically; this notice disappears after the next successful fetch with values."
+    },
+    "daily_only": {
+      "title": "Linz Netz delivers daily values only",
+      "description": "Quarter-hour values are not enabled in the Serviceportal yet. Until then the integration imports daily values: each day's consumption appears in the first hour of that day in the Energy dashboard. For hourly values, give consent under \"Viertelstundenwerte aktivieren\" in the portal; enabling usually takes up to two working days. The integration then switches automatically and this notice disappears."
     }
   }
 }

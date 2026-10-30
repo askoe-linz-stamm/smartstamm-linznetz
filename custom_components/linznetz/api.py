@@ -3,12 +3,16 @@
 The portal is a Jakarta Faces application behind Keycloak SSO. One fetch needs
 four requests: load the page, switch to quarter-hour values, show the chosen
 period and download that result as CSV. The CSV covers any date range at once.
+
+Until the user has enabled quarter-hour values in the portal, it offers only
+daily values; the client then exports those. Right after registering, the
+portal has no values at all and the export is an empty string.
 """
 
 from __future__ import annotations
 
 import csv
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from html import unescape
 import io
 import logging
@@ -34,7 +38,12 @@ _VIEW_STATE_RE = re.compile(
 _KIND_FIELD_RE = re.compile(r'name="(myForm1:[^"]*grid_eval:selectedClass)"')
 _UNIT_FIELD_RE = re.compile(r'name="(myForm1:[^"]*:selectedClass)"[^>]*value="KWH"')
 _EXPORT_RE = re.compile(r'id="(myForm1:exportAreaID:[^"]+)"')
+# Shown instead of results for a period without values, e.g. on the day of registration.
+_NO_DATA_RE = re.compile("Verbrauchswerte können leider nicht angezeigt werden")
+_QUARTER = "ConsumQuarter"
+_DAILY = "ConsumDaily"
 _CSV_HEADER = ["Datum von", "Datum bis", "Energiemenge in kWh"]
+_DAILY_CSV_HEADER = ["Datum", "Energiemenge in kWh"]
 _LOGGER = logging.getLogger(__name__)
 _RequestStep = Literal["open", "login", "switch", "show", "export"]
 _CONTENT_TYPES = {
@@ -70,7 +79,8 @@ class LinzNetzConnectionError(LinzNetzError):
 
 
 class LinzNetzClient:
-    """Fetches quarter-hour consumption as CSV text."""
+    """Fetches consumption as CSV text: quarter-hour values, or daily values if the
+    portal offers no quarter hours yet."""
 
     def __init__(self, session: ClientSession, username: str, password: str) -> None:
         self._session = session
@@ -80,7 +90,11 @@ class LinzNetzClient:
         self._response_summary: str | None = None
 
     async def async_fetch_csv(self, first_day: date, last_day: date) -> str:
-        """Return the portal CSV export for both days inclusive."""
+        """Return the portal CSV export for both days inclusive.
+
+        The text is a daily export (see ``is_daily_export``) while the portal offers
+        only daily values, and empty while it has no values for the period.
+        """
         self._step = "open"
         self._response_summary = None
         try:
@@ -99,6 +113,10 @@ class LinzNetzClient:
             page = await self._async_open_portal()
             view_state = _view_state(page)
             kind_field = _find(_KIND_FIELD_RE, page, "kind-field", "Auswahl Viertelstundenwerte")
+            quarter = re.search(
+                f'name="{re.escape(kind_field)}"[^>]*value="{_QUARTER}"', page
+            ) is not None
+            kind = _QUARTER if quarter else _DAILY
 
             switched = await self._async_ajax(
                 view_state,
@@ -107,15 +125,17 @@ class LinzNetzClient:
                 execute=kind_field,
                 render=_FORM,
                 event="change",
-                fields={kind_field: "ConsumQuarter"},
+                fields={kind_field: kind},
             )
             view_state = _view_state(switched, view_state)
             fields = {
-                kind_field: "ConsumQuarter",
-                _find(_UNIT_FIELD_RE, switched, "unit-field", "Einheit kWh"): "KWH",
+                kind_field: kind,
                 f"{_FORM}:calendarFromRegion": first_day.strftime("%d.%m.%Y"),
                 f"{_FORM}:calendarToRegion": last_day.strftime("%d.%m.%Y"),
             }
+            if quarter:
+                # Daily values have no unit choice.
+                fields[_find(_UNIT_FIELD_RE, switched, "unit-field", "Einheit kWh")] = "KWH"
 
             # The export always delivers the last result shown, so show it first.
             shown = await self._async_ajax(
@@ -127,6 +147,8 @@ class LinzNetzClient:
                 fields={**fields, _SHOW_BUTTON: _SHOW_BUTTON},
             )
             view_state = _view_state(shown, view_state)
+            if _EXPORT_RE.search(shown) is None and _NO_DATA_RE.search(shown):
+                return ""
             # The first export link is CSV; the others are XML and MSCONS.
             export = _find(_EXPORT_RE, shown, "export-link", "CSV-Export")
 
@@ -282,6 +304,32 @@ def parse_quarter_hours(text: str) -> dict[datetime, float]:
         readings[start] = kwh
         previous = start
     return readings
+
+
+def is_daily_export(text: str) -> bool:
+    """Whether ``text`` is the daily export, offered before quarter hours are enabled."""
+    first_line = text.lstrip("\ufeff").split("\n", 1)[0].strip().split(";")
+    return first_line[:2] == _DAILY_CSV_HEADER
+
+
+def parse_daily_values(text: str) -> list[tuple[datetime, float, int]]:
+    """List the UTC start, kWh and length in hours (23 to 25) of every reported day."""
+    days: list[tuple[datetime, float, int]] = []
+    rows = csv.reader(io.StringIO(text.lstrip("\ufeff")), delimiter=";")
+    if next(rows, [])[:2] != _DAILY_CSV_HEADER:
+        raise LinzNetzError("csv-format", "CSV-Export hat andere Spalten")
+    for row in rows:
+        if len(row) < 2 or not row[1]:
+            continue
+        try:
+            day = datetime.strptime(row[0], "%d.%m.%Y").date()
+            kwh = float(row[1].replace(",", "."))
+        except ValueError as err:
+            raise LinzNetzError("csv-format", "CSV-Export hat ein anderes Format") from err
+        start = datetime.combine(day, datetime.min.time(), VIENNA).astimezone(UTC)
+        end = datetime.combine(day + timedelta(days=1), datetime.min.time(), VIENNA).astimezone(UTC)
+        days.append((start, kwh, round((end - start).total_seconds() / 3600)))
+    return days
 
 
 def complete_hours(readings: dict[datetime, float]) -> list[tuple[datetime, float]]:

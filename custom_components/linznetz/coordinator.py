@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import calendar
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 import logging
 import math
 
@@ -23,6 +23,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfEnergy
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import EnergyConverter
@@ -33,6 +34,8 @@ from .api import (
     LinzNetzClient,
     LinzNetzError,
     complete_hours,
+    is_daily_export,
+    parse_daily_values,
     parse_quarter_hours,
 )
 from .const import (
@@ -70,8 +73,10 @@ _COST_META = StatisticMetaData(
 )
 
 
-def hourly_cost(start: datetime, kwh: float, price: float, fixed_per_year: float) -> float:
-    """Cost in EUR of the hour starting at ``start``.
+def hourly_cost(
+    start: datetime, kwh: float, price: float, fixed_per_year: float, hours: int = 1
+) -> float:
+    """Cost in EUR of the ``hours`` starting at ``start`` (a whole day for daily values).
 
     Energy at ``price`` EUR/kWh plus an even share of the yearly fixed costs. The
     share depends on the Vienna calendar year of the hour (8760 or 8784 hours), so
@@ -79,7 +84,7 @@ def hourly_cost(start: datetime, kwh: float, price: float, fixed_per_year: float
     """
     year = start.astimezone(VIENNA).year
     hours_in_year = 8784 if calendar.isleap(year) else 8760
-    return kwh * price + fixed_per_year / hours_in_year
+    return kwh * price + fixed_per_year * hours / hours_in_year
 
 
 @dataclass(frozen=True)
@@ -98,6 +103,8 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
     Every run reloads the last ``REFETCH_DAYS`` so that late or corrected portal
     values replace earlier ones. The first run loads the full portal history.
     ``problem`` describes the current failure streak, or is None after success.
+    ``notice`` is set after a successful run that found no values (``no_data``) or
+    only daily values (``daily_only``); each day's kWh then lands in its first hour.
     """
 
     config_entry: LinzNetzConfigEntry
@@ -114,6 +121,7 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
         )
         self._client = client
         self.problem: Problem | None = None
+        self.notice: str | None = None
         self.last_successful_fetch: datetime | None = None
         self.next_fetch: datetime | None = None
 
@@ -169,33 +177,58 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
     async def _async_fetch_and_import(self) -> datetime | None:
         recorder = get_instance(self.hass)
         last = await recorder.async_add_executor_job(
-            get_last_statistics, self.hass, 1, CONSUMPTION_STATISTIC, False, {"sum"}
+            get_last_statistics, self.hass, 2, CONSUMPTION_STATISTIC, False, {"sum"}
         )
         today = dt_util.now().date()
+        horizon: datetime | None = None
         if rows := last.get(CONSUMPTION_STATISTIC):
             newest = dt_util.utc_from_timestamp(rows[0]["start"])
-            first_day = dt_util.as_local(newest).date() - timedelta(days=REFETCH_DAYS)
+            local = dt_util.as_local(newest)
+            first_day = local.date() - timedelta(days=REFETCH_DAYS)
+            horizon = newest + timedelta(hours=1)
+            # A daily value sits at local midnight, a day after the row before it,
+            # and covers that whole day.
+            if len(rows) > 1 and local.hour == 0 and (
+                newest - dt_util.utc_from_timestamp(rows[1]["start"]) > timedelta(hours=1)
+            ):
+                horizon = dt_util.start_of_local_day(local.date() + timedelta(days=1))
         else:
-            newest = None
             first_day = today - timedelta(days=HISTORY_DAYS)
 
         text = await self._client.async_fetch_csv(first_day, today)
-        hours = await self.hass.async_add_executor_job(
-            lambda: complete_hours(parse_quarter_hours(text))
-        )
-        if not hours:
-            return None if newest is None else newest + timedelta(hours=1)
+        periods = await self.hass.async_add_executor_job(_parse_export, text)
+        notice = "no_data" if not text else "daily_only" if is_daily_export(text) else None
+        self._set_notice(notice)
+        if not periods:
+            return horizon
 
-        await self._async_import(first_day, hours)
-        return hours[-1][0] + timedelta(hours=1)
+        await self._async_import(periods)
+        start, _, hours = periods[-1]
+        return start + timedelta(hours=hours)
 
-    async def _async_import(
-        self, first_day: date, hours: list[tuple[datetime, float]]
-    ) -> None:
-        window_start = dt_util.start_of_local_day(first_day)
+    def _set_notice(self, notice: str | None) -> None:
+        """Show a repair notice while the portal has no values or only daily values.
+
+        ``None`` clears both; the integration does this when it is unloaded.
+        """
+        self.notice = notice
+        for kind in ("no_data", "daily_only"):
+            issue_id = f"{kind}_{self.config_entry.entry_id}"
+            if kind == notice:
+                ir.async_create_issue(
+                    self.hass, DOMAIN, issue_id, is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING, translation_key=kind,
+                )
+            else:
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+
+    async def _async_import(self, periods: list[tuple[datetime, float, int]]) -> None:
+        # Continue from the last sum before the first new row. Rows before it
+        # stay untouched, also if the portal no longer reports their days.
+        window_start = periods[0][0]
         consumption_sum = await self._async_sum_before(CONSUMPTION_STATISTIC, window_start)
         consumption: list[StatisticData] = []
-        for start, kwh in hours:
+        for start, kwh, _ in periods:
             consumption_sum += kwh
             consumption.append(StatisticData(start=start, sum=round(consumption_sum, 3)))
         async_add_external_statistics(self.hass, _CONSUMPTION_META, consumption)
@@ -206,8 +239,8 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
         price, fixed_per_year = cost_inputs
         cost_sum = await self._async_sum_before(COST_STATISTIC, window_start)
         cost: list[StatisticData] = []
-        for start, kwh in hours:
-            cost_sum += hourly_cost(start, kwh, price, fixed_per_year)
+        for start, kwh, hours in periods:
+            cost_sum += hourly_cost(start, kwh, price, fixed_per_year, hours)
             cost.append(StatisticData(start=start, sum=round(cost_sum, 4)))
         async_add_external_statistics(self.hass, _COST_META, cost)
 
@@ -260,3 +293,12 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
             _LOGGER.warning("Wert aus %s ist keine Zahl, Kosten übersprungen", entity_id)
             return None
         return value
+
+
+def _parse_export(text: str) -> list[tuple[datetime, float, int]]:
+    """Rows to import as (UTC start, kWh, hours covered), oldest first."""
+    if not text:
+        return []
+    if is_daily_export(text):
+        return parse_daily_values(text)
+    return [(start, kwh, 1) for start, kwh in complete_hours(parse_quarter_hours(text))]

@@ -31,6 +31,8 @@ CARD_PATH = Path(__file__).parents[1] / "docs" / "dashboard-status-card.yaml"
         ("portal_changed", "unknown", "Der letzte Abruf ist fehlgeschlagen."),
         ("login_rejected", "unknown", "Die Anmeldung bei Linz Netz ist fehlgeschlagen."),
         ("unavailable", "unknown", "Der Abrufstatus ist derzeit nicht verfügbar."),
+        ("no_data", "unknown", "Im Serviceportal stehen noch keine Verbrauchswerte bereit."),
+        ("daily_only", "2026-10-01T22:00:00+00:00", "Linz Netz liefert nur Tageswerte."),
     ],
 )
 async def test_card_messages_and_local_times(
@@ -64,7 +66,7 @@ async def test_card_messages_and_local_times(
     if status != "ok":
         assert "Für heute liegen noch keine Werte vor." not in rendered
         assert ("zuletzt erfolgreich importierten Daten" in rendered) == (
-            until != "unknown"
+            until != "unknown" and status != "daily_only"
         )
 
 

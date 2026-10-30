@@ -18,6 +18,10 @@ content: |
   Die Anmeldung bei Linz Netz ist fehlgeschlagen. Bitte prüfe die Zugangsdaten der Integration.
   {% elif status in ['portal_changed', 'connection_error'] %}
   Der letzte Abruf ist fehlgeschlagen.
+  {% elif status == 'no_data' %}
+  Im Serviceportal stehen noch keine Verbrauchswerte bereit.
+  {% elif status == 'daily_only' %}
+  Linz Netz liefert nur Tageswerte. Der Tagesverbrauch erscheint in der ersten Stunde des Tages.
   {% elif status != 'ok' %}
   Der Abrufstatus ist derzeit nicht verfügbar.
   {% elif until is none %}
@@ -27,7 +31,7 @@ content: |
   {% else %}
   Für heute wurden bereits Verbrauchswerte importiert.
   {% endif %}
-  {% if status != 'ok' and until is not none %}
+  {% if status not in ['ok', 'daily_only'] and until is not none %}
   Angezeigt werden die zuletzt erfolgreich importierten Daten.
   {% endif %}
 
