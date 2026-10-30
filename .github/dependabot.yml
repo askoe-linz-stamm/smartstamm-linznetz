@@ -1,11 +1,33 @@
-# Monthly pull requests for the pinned test dependency and the GitHub Actions.
+# Daily pull requests at 05:00 Vienna time for the pinned test dependency and the GitHub Actions. Minor and patch
+# updates come bundled per ecosystem in the group routine-updates, each major as its own pull request; security updates
+# come at once. dependabot-auto-merge.yml merges everything but majors once CI is green on the pull request.
+# The cooldown leaves new releases time to be pulled or fixed; it never delays security updates.
 version: 2
 updates:
   - package-ecosystem: pip
     directory: /
     schedule:
-      interval: monthly
+      interval: daily
+      time: "05:00"
+      timezone: Europe/Vienna
+    cooldown:
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
+    groups:
+      routine-updates:
+        patterns: ["*"]
+        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: monthly
+      interval: daily
+      time: "05:00"
+      timezone: Europe/Vienna
+    # GitHub Actions supports only default-days, no cooldown per SemVer level.
+    cooldown:
+      default-days: 7
+    groups:
+      routine-updates:
+        patterns: ["*"]
+        update-types: [minor, patch]

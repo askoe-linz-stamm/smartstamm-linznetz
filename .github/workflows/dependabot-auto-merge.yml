@@ -1,0 +1,82 @@
+name: Dependabot auto-merge
+
+# Merges a Dependabot pull request once the pull request checks passed on its exact head commit: security updates
+# and version updates up to minor, grouped routine updates, and submodule updates. A major update stays open for a
+# person or agent to review. Only GitHub's own tools run here; the merge uses the workflow token.
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+
+permissions:
+  contents: write
+  pull-requests: write
+  # Merging a pull request that changes workflow files needs this as well.
+  actions: write
+
+jobs:
+  merge:
+    name: Merge Dependabot update
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: dependabot-auto-merge-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: true
+    steps:
+      - name: Merge if eligible
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+          # Workflows to start on the default branch after a merge, separated by spaces. A merge with the workflow
+          # token starts no push workflows by itself.
+          POST_MERGE_WORKFLOWS: ""
+        run: |
+          set -euo pipefail
+          default=$(gh repo view "$GITHUB_REPOSITORY" --json defaultBranchRef --jq .defaultBranchRef.name)
+          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$HEAD_BRANCH" --base "$default" --state open \
+            --json number,author,isDraft,headRefOid,title,commits --jq '.[0] // empty')
+          if [ -z "$pr" ]; then echo "No open pull request for $HEAD_BRANCH."; exit 0; fi
+          number=$(jq -r .number <<<"$pr")
+
+          # Only Dependabot's own, unchanged commits on exactly the tested head.
+          if ! jq -e --arg sha "$TESTED_SHA" '
+              .author.login == "app/dependabot" and .isDraft == false and .headRefOid == $sha and
+              ([.commits[].authors[].login] | all(. == "dependabot[bot]"))' <<<"$pr" >/dev/null; then
+            echo "#$number: not an unchanged Dependabot pull request on the tested commit; left open."
+            exit 0
+          fi
+
+          # Grouped routine updates hold only minor and patch updates (see .github/dependabot.yml); submodule
+          # updates carry commit hashes. A single update is a major one when its first version number changes,
+          # or the second one below 1.0.0. An unknown title stays open.
+          title=$(jq -r .title <<<"$pr")
+          shopt -s nocasematch
+          if [[ $title =~ bump\ the\ routine-updates\ group ]] || [[ $HEAD_BRANCH == dependabot/submodules/* ]]; then
+            major=false
+          elif [[ $title =~ from\ v?([0-9]+)(\.([0-9]+))?[^\ ]*\ to\ v?([0-9]+)(\.([0-9]+))? ]]; then
+            from_major=${BASH_REMATCH[1]} from_minor=${BASH_REMATCH[3]:-0}
+            to_major=${BASH_REMATCH[4]} to_minor=${BASH_REMATCH[6]:-0}
+            major=false
+            if [ "$from_major" != "$to_major" ] || { [ "$from_major" = 0 ] && [ "$from_minor" != "$to_minor" ]; }; then
+              major=true
+            fi
+          else
+            major=true
+          fi
+          shopt -u nocasematch
+          if [ "$major" = true ]; then
+            echo "#$number: major or unrecognised update ($title); left open for review."
+            exit 0
+          fi
+
+          gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --squash --delete-branch --match-head-commit "$TESTED_SHA"
+          for workflow in $POST_MERGE_WORKFLOWS; do
+            gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref "$default"
+          done

@@ -83,4 +83,4 @@ python3.14 -m venv .venv
 .venv/bin/pytest
 ```
 
-CI runs the tests against the pinned Home Assistant on every push and once a month against the newest release. Dependabot opens monthly pull requests for the pinned test dependency and the GitHub Actions.
+CI runs the tests against the pinned Home Assistant on every push and once a month against the newest release. Dependabot opens daily pull requests for the pinned test dependency and the GitHub Actions, security updates at once; once CI is green, `dependabot-auto-merge.yml` merges all but major updates.
