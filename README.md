@@ -6,16 +6,16 @@ Linz Netz offers no API. The integration signs in to the [Serviceportal](https:/
 
 ## What you get
 
-- `linznetz:energy_consumption`: hourly consumption in kWh (quarter hours summed to hours).
+- `linznetz:energy_consumption`: hourly consumption in kWh (quarter hours summed to hours). While the portal offers only daily values (quarter-hour values not enabled yet), each day's consumption is stored in the first hour of that day, together with the fixed-cost share of the whole day; a repair notice explains this. After quarter-hour values are enabled, the next run switches automatically.
 - `linznetz:energy_cost`: hourly cost in EUR, if a price entity, a fixed cost entity or both are set. Each hour costs kWh × the price in EUR/kWh plus the fixed costs per year divided by the hours of that year in Vienna local time (8760, or 8784 in a leap year). Both values are read at import time. Only imported hours carry a share of the fixed costs; hours missing in the portal add none. If a set entity has no numeric value, the run skips the cost statistic and keeps the existing values.
 - Sensor **Daten bis**: end of the newest imported hour. Linz Netz publishes values roughly once a day, so this usually lags by about a day.
 - Sensor **Letzter erfolgreicher Abruf**: completion time of the last successful fetch, even when the portal returned no newer values. It keeps its previous timestamp when a fetch fails.
 - Sensor **Nächster Abruf geplant**: estimated time of the next scheduled fetch, within about a second of Home Assistant's polling timer. It is unknown when polling is disabled or a rejected login requires re-authentication. A scheduled fetch does not guarantee new consumption data.
-- Sensor **Status** (diagnostic): `ok`, `portal_changed`, `login_rejected` or `connection_error`. On errors the attributes `error_code` (a stable step name such as `export-link` or `csv-format`), `since` and `failed_runs` describe the current failure streak. `portal_changed` means the portal no longer works as expected, most likely after a redesign. All sensors stay available when a run fails. The data horizon and last successful fetch are restored after a restart if the first fetch fails.
+- Sensor **Status** (diagnostic): `ok`, `no_data`, `daily_only`, `portal_changed`, `login_rejected` or `connection_error`. `no_data` (the portal has no values yet, as on the day of registration) and `daily_only` are successful runs with a repair notice, not errors. On errors the attributes `error_code` (a stable step name such as `export-link` or `csv-format`), `since` and `failed_runs` describe the current failure streak. `portal_changed` means the portal no longer works as expected, most likely after a redesign. All sensors stay available when a run fails. The data horizon and last successful fetch are restored after a restart if the first fetch fails.
 
 ## Setup
 
-1. Activate quarter-hour values (*Viertelstundenwerte aktivieren*) in the Serviceportal.
+1. Activate quarter-hour values (*Viertelstundenwerte aktivieren*) in the Serviceportal. Without them the integration imports daily values; right after registering, the portal has no values until the next day.
 2. Install through HACS: add `https://github.com/askoe-linz-stamm/smartstamm-linznetz` as a custom repository (type *Integration*), download **Linz Netz**, restart Home Assistant.
 3. Add the integration **Linz Netz** with the portal login. Optionally choose an energy price entity (for example an `input_number` in EUR/kWh) and a fixed cost entity holding the yearly sum of base fees and flat charges in EUR, including VAT. Both can be changed later under *Configure*.
 4. In *Settings → Dashboards → Energy*, add a grid consumption source with the statistic **Linz Netz Stromverbrauch** and, for costs, **Linz Netz Energiekosten**.
