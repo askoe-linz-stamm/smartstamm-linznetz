@@ -96,6 +96,13 @@ async def test_daily_values_then_quarter_hours(
         )
         assert ir.async_get(hass).async_get_issue(*issue) is not None
 
+        # A run without values keeps the horizon at the end of the newest day.
+        fetch.return_value = ""
+        await entry.runtime_data.async_refresh()
+        assert hass.states.get("sensor.linz_netz_stromzahler_data_until").state == (
+            "2026-10-25T23:00:00+00:00"
+        )
+
         # Quarter hours enabled: the next run replaces the newest day hour by hour.
         fetch.return_value = portal_csv(datetime(2026, 10, 25, 0, 0), [0.25] * 8)
         await entry.runtime_data.async_refresh()
@@ -122,6 +129,11 @@ async def test_no_values_yet_is_a_notice(
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
+    issue = ("linznetz", f"no_data_{entry.entry_id}")
     assert hass.states.get("sensor.linz_netz_stromzahler_status").state == "no_data"
-    assert ir.async_get(hass).async_get_issue("linznetz", f"no_data_{entry.entry_id}")
+    assert ir.async_get(hass).async_get_issue(*issue)
     assert not [r for r in caplog.records if r.name.startswith("custom_components.linznetz")]
+
+    # Removing the integration also removes its notice.
+    assert await hass.config_entries.async_remove(entry.entry_id)
+    assert ir.async_get(hass).async_get_issue(*issue) is None

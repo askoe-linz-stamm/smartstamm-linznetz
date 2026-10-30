@@ -192,14 +192,18 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
         notice = "no_data" if not text else "daily_only" if is_daily_export(text) else None
         self._set_notice(notice)
         if not periods:
-            return None if newest is None else newest + timedelta(hours=1)
+            # Keep the known horizon: after daily values it is a day past ``newest``.
+            return self.data or (None if newest is None else newest + timedelta(hours=1))
 
         await self._async_import(periods)
         start, _, hours = periods[-1]
         return start + timedelta(hours=hours)
 
     def _set_notice(self, notice: str | None) -> None:
-        """Show a repair notice while the portal has no values or only daily values."""
+        """Show a repair notice while the portal has no values or only daily values.
+
+        ``None`` clears both; the integration does this when it is unloaded.
+        """
         self.notice = notice
         for kind in ("no_data", "daily_only"):
             issue_id = f"{kind}_{self.config_entry.entry_id}"
