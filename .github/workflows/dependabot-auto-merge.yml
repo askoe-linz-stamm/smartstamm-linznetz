@@ -60,9 +60,9 @@ jobs:
           shopt -s nocasematch
           if [[ $title =~ bump\ the\ routine-updates\ group ]] || [[ $HEAD_BRANCH == dependabot/submodules/* ]]; then
             major=false
-          elif [[ $title =~ from\ v?([0-9]+)(\.([0-9]+))?[^\ ]*\ to\ v?([0-9]+)(\.([0-9]+))? ]]; then
+          elif [[ $title =~ from\ v?([0-9]+)(\.([0-9]+))?(\.[0-9]+)*([-+][^\ ]*)?\ to\ v?([0-9]+)(\.([0-9]+))?(\.[0-9]+)*([-+][^\ ]*)?(\ |$) ]]; then
             from_major=${BASH_REMATCH[1]} from_minor=${BASH_REMATCH[3]:-0}
-            to_major=${BASH_REMATCH[4]} to_minor=${BASH_REMATCH[6]:-0}
+            to_major=${BASH_REMATCH[6]} to_minor=${BASH_REMATCH[8]:-0}
             major=false
             if [ "$from_major" != "$to_major" ] || { [ "$from_major" = 0 ] && [ "$from_minor" != "$to_minor" ]; }; then
               major=true
