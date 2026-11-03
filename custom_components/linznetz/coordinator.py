@@ -246,7 +246,8 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
 
     async def _async_sum_before(self, statistic_id: str, moment: datetime) -> float:
         """Running total of the last hour before ``moment``, 0 before the first import."""
-        rows = await get_instance(self.hass).async_add_executor_job(
+        recorder = get_instance(self.hass)
+        rows = await recorder.async_add_executor_job(
             statistics_during_period,
             self.hass,
             moment - timedelta(days=30),
@@ -257,6 +258,15 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
             {"sum"},
         )
         values = rows.get(statistic_id)
+        if not values:
+            # The statistic paused for more than 30 days, for example the cost
+            # while the price entity was unavailable: continue from its newest row.
+            last = await recorder.async_add_executor_job(
+                get_last_statistics, self.hass, 1, statistic_id, False, {"sum"}
+            )
+            values = [
+                row for row in last.get(statistic_id, []) if row["start"] < moment.timestamp()
+            ]
         return (values[-1].get("sum") or 0.0) if values else 0.0
 
     def _cost_inputs(self) -> tuple[float, float] | None:
