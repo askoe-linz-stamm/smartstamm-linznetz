@@ -171,5 +171,10 @@ async def test_cost_sum_continues_after_a_long_pause(
         freezer.move_to("2026-10-23 12:00:00+02:00")
         fetch.return_value = portal_csv(datetime(2026, 10, 22, 0, 0), [0.25] * 8)
         await entry.runtime_data.async_refresh()
+        assert await _sums(hass, COST_STATISTIC) == [0.5, 1.0, 1.5, 2.0]
+
+        # A later run over the same window keeps the sum.
+        freezer.move_to("2026-10-23 18:00:00+02:00")
+        await entry.runtime_data.async_refresh()
 
     assert await _sums(hass, COST_STATISTIC) == [0.5, 1.0, 1.5, 2.0]
