@@ -246,18 +246,22 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
 
     async def _async_sum_before(self, statistic_id: str, moment: datetime) -> float:
         """Running total of the last hour before ``moment``, 0 before the first import."""
-        rows = await get_instance(self.hass).async_add_executor_job(
-            statistics_during_period,
-            self.hass,
-            moment - timedelta(days=30),
-            moment,
-            {statistic_id},
-            "hour",
-            None,
-            {"sum"},
-        )
-        values = rows.get(statistic_id)
-        return (values[-1].get("sum") or 0.0) if values else 0.0
+        # Without a row in the last 30 days, search the whole history: the statistic
+        # may have paused longer, for example the cost while the price was unavailable.
+        for start in (moment - timedelta(days=30), dt_util.utc_from_timestamp(0)):
+            rows = await get_instance(self.hass).async_add_executor_job(
+                statistics_during_period,
+                self.hass,
+                start,
+                moment,
+                {statistic_id},
+                "hour",
+                None,
+                {"sum"},
+            )
+            if values := rows.get(statistic_id):
+                return values[-1].get("sum") or 0.0
+        return 0.0
 
     def _cost_inputs(self) -> tuple[float, float] | None:
         """Price in EUR/kWh and fixed costs in EUR/year from the configured entities.

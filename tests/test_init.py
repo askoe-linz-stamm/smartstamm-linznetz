@@ -146,3 +146,35 @@ async def test_fixed_costs_without_price_entity(
 
     assert await _sums(hass, CONSUMPTION_STATISTIC) == [1.0, 2.0, 3.0]
     assert await _sums(hass, COST_STATISTIC) == [1.0, 2.0]
+
+
+async def test_cost_sum_continues_after_a_long_pause(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    await hass.config.async_set_time_zone("Europe/Vienna")
+    freezer.move_to("2026-09-21 12:00:00+02:00")
+    hass.states.async_set("input_number.price", "0.5")
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"username": "verein", "password": "secret"},
+        options={CONF_PRICE_ENTITY: "input_number.price"},
+    )
+    entry.add_to_hass(hass)
+    fetch = AsyncMock(return_value=portal_csv(START, [0.25] * 8))
+
+    with patch("custom_components.linznetz.api.LinzNetzClient.async_fetch_csv", fetch):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        assert await _sums(hass, COST_STATISTIC) == [0.5, 1.0]
+
+        # The next cost rows start 32 days after the last one.
+        freezer.move_to("2026-10-23 12:00:00+02:00")
+        fetch.return_value = portal_csv(datetime(2026, 10, 22, 0, 0), [0.25] * 8)
+        await entry.runtime_data.async_refresh()
+        assert await _sums(hass, COST_STATISTIC) == [0.5, 1.0, 1.5, 2.0]
+
+        # A later run over the same window keeps the sum.
+        freezer.move_to("2026-10-23 18:00:00+02:00")
+        await entry.runtime_data.async_refresh()
+
+    assert await _sums(hass, COST_STATISTIC) == [0.5, 1.0, 1.5, 2.0]
