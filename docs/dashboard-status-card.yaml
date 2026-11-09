@@ -22,6 +22,8 @@ content: |
   Im Serviceportal stehen noch keine Verbrauchswerte bereit.
   {% elif status == 'daily_only' %}
   Linz Netz liefert nur Tageswerte. Der Tagesverbrauch erscheint in der ersten Stunde des Tages.
+  {% elif status == 'stale' %}
+  Linz Netz hat seit mehr als zwei Tagen keine neuen Verbrauchswerte geliefert.
   {% elif status != 'ok' %}
   Der Abrufstatus ist derzeit nicht verfügbar.
   {% elif until is none %}

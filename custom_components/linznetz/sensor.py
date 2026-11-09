@@ -119,13 +119,19 @@ class StatusSensor(_LinzNetzSensor):
 
     ``portal_changed`` with a stable ``error_code`` means the portal no longer
     works as expected; SmartStamm turns lasting ones into GitHub issues.
-    ``no_data`` and ``daily_only`` are successful runs with a notice, not errors.
+    ``no_data``, ``daily_only`` and ``stale`` are successful runs with a notice, not errors.
     """
 
     _attr_device_class = SensorDeviceClass.ENUM
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_options = [
-        "ok", "no_data", "daily_only", "portal_changed", "login_rejected", "connection_error"
+        "ok",
+        "no_data",
+        "daily_only",
+        "stale",
+        "portal_changed",
+        "login_rejected",
+        "connection_error",
     ]
 
     def __init__(self, coordinator: LinzNetzCoordinator) -> None:

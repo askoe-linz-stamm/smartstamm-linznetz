@@ -61,6 +61,7 @@
           "ok": "OK",
           "no_data": "Noch keine Werte",
           "daily_only": "Nur Tageswerte",
+          "stale": "Keine neuen Werte",
           "portal_changed": "Portal verändert",
           "login_rejected": "Anmeldung abgelehnt",
           "connection_error": "Verbindungsfehler"
@@ -76,6 +77,10 @@
     "daily_only": {
       "title": "Linz Netz liefert nur Tageswerte",
       "description": "Im Serviceportal sind die Viertelstundenwerte noch nicht aktiviert. Bis dahin übernimmt die Integration Tageswerte: Der Tagesverbrauch erscheint im Energie-Dashboard gesammelt in der ersten Stunde des Tages. Für Stundenwerte im Serviceportal unter „Viertelstundenwerte aktivieren“ zustimmen; die Freischaltung dauert meist bis zu zwei Werktage. Danach wechselt die Integration automatisch, und dieser Hinweis verschwindet."
+    },
+    "stale": {
+      "title": "Linz Netz liefert keine neuen Verbrauchswerte",
+      "description": "Der Abruf funktioniert, aber im Serviceportal stehen seit mehr als zwei Tagen keine neueren Verbrauchswerte bereit. Das kommt etwa nach einem Zählertausch vor, bis Linz Netz die Werte des neuen Zählers bereitstellt. Prüfe im Serviceportal, ob dort neuere Werte stehen. Die Integration fragt stündlich nach und übernimmt nachgelieferte Werte automatisch; dieser Hinweis verschwindet dann."
     }
   }
 }

@@ -33,6 +33,11 @@ CARD_PATH = Path(__file__).parents[1] / "docs" / "dashboard-status-card.yaml"
         ("unavailable", "unknown", "Der Abrufstatus ist derzeit nicht verfügbar."),
         ("no_data", "unknown", "Im Serviceportal stehen noch keine Verbrauchswerte bereit."),
         ("daily_only", "2026-10-01T22:00:00+00:00", "Linz Netz liefert nur Tageswerte."),
+        (
+            "stale",
+            "2026-09-28T22:00:00+00:00",
+            "Linz Netz hat seit mehr als zwei Tagen keine neuen Verbrauchswerte geliefert.",
+        ),
     ],
 )
 async def test_card_messages_and_local_times(
