@@ -23,7 +23,8 @@ DATA_UNTIL = "sensor.linz_netz_stromzahler_data_until"
 LAST_FETCH = "sensor.linz_netz_stromzahler_last_successful_fetch"
 NEXT_FETCH = "sensor.linz_netz_stromzahler_next_scheduled_fetch"
 STATUS = "sensor.linz_netz_stromzahler_status"
-CSV = portal_csv(datetime(2026, 9, 20), [0.25] * 4)
+# A complete day, so the previous day is in and fetches stay six hours apart.
+CSV = portal_csv(datetime(2026, 9, 20), [0.25] * 96)
 
 
 async def test_fetch_times_for_unchanged_data_and_repeated_failures(
@@ -144,7 +145,7 @@ async def test_restore_timestamps_without_overwriting_a_new_success(
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
     assert hass.states.get(DATA_UNTIL).state == (
-        previous_until if first_fetch_fails else "2026-09-19T23:00:00+00:00"
+        previous_until if first_fetch_fails else "2026-09-20T22:00:00+00:00"
     )
     assert hass.states.get(LAST_FETCH).state == (
         previous_fetch if first_fetch_fails else "2026-09-21T06:00:00+00:00"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import calendar
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 import logging
 import math
 
@@ -45,7 +45,9 @@ from .const import (
     COST_STATISTIC,
     DOMAIN,
     HISTORY_DAYS,
+    MISSING_DAY_INTERVAL,
     REFETCH_DAYS,
+    STALE_AFTER,
     UPDATE_INTERVAL,
 )
 
@@ -102,9 +104,12 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
 
     Every run reloads the last ``REFETCH_DAYS`` so that late or corrected portal
     values replace earlier ones. The first run loads the full portal history.
+    Runs are hourly while the previous Vienna day is missing, otherwise every
+    ``UPDATE_INTERVAL``.
     ``problem`` describes the current failure streak, or is None after success.
-    ``notice`` is set after a successful run that found no values (``no_data``) or
-    only daily values (``daily_only``); each day's kWh then lands in its first hour.
+    ``notice`` is set after a successful run that found no values (``no_data``),
+    only daily values (``daily_only``; each day's kWh then lands in its first
+    hour) or no values newer than ``STALE_AFTER`` (``stale``).
     """
 
     config_entry: LinzNetzConfigEntry
@@ -172,6 +177,10 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
             raise UpdateFailed(str(err)) from err
         self.problem = None
         self.last_successful_fetch = dt_util.utcnow()
+        today = datetime.combine(dt_util.utcnow().astimezone(VIENNA).date(), time(), VIENNA)
+        self.update_interval = (
+            UPDATE_INTERVAL if newest is not None and newest >= today else MISSING_DAY_INTERVAL
+        )
         return newest
 
     async def _async_fetch_and_import(self) -> datetime | None:
@@ -198,21 +207,23 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
         text = await self._client.async_fetch_csv(first_day, today)
         periods = await self.hass.async_add_executor_job(_parse_export, text)
         notice = "no_data" if not text else "daily_only" if is_daily_export(text) else None
+        if periods:
+            await self._async_import(periods)
+            start, _, hours = periods[-1]
+            horizon = start + timedelta(hours=hours)
+        if notice is None and horizon is not None and dt_util.utcnow() - horizon > STALE_AFTER:
+            notice = "stale"
         self._set_notice(notice)
-        if not periods:
-            return horizon
-
-        await self._async_import(periods)
-        start, _, hours = periods[-1]
-        return start + timedelta(hours=hours)
+        return horizon
 
     def _set_notice(self, notice: str | None) -> None:
-        """Show a repair notice while the portal has no values or only daily values.
+        """Show a repair notice while the portal has no values, only daily values
+        or no new values.
 
-        ``None`` clears both; the integration does this when it is unloaded.
+        ``None`` clears all of them; the integration does this when it is unloaded.
         """
         self.notice = notice
-        for kind in ("no_data", "daily_only"):
+        for kind in ("no_data", "daily_only", "stale"):
             issue_id = f"{kind}_{self.config_entry.entry_id}"
             if kind == notice:
                 ir.async_create_issue(

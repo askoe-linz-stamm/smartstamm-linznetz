@@ -73,7 +73,7 @@ async def test_daily_values_then_quarter_hours(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     await hass.config.async_set_time_zone("Europe/Vienna")
-    freezer.move_to("2026-10-27 12:00:00+01:00")
+    freezer.move_to("2026-10-26 12:00:00+01:00")
     hass.states.async_set("input_number.fixed", "8760")  # 1 EUR per hour in 2026
     entry = MockConfigEntry(
         domain=DOMAIN,

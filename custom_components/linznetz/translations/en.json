@@ -61,6 +61,7 @@
           "ok": "OK",
           "no_data": "No values yet",
           "daily_only": "Daily values only",
+          "stale": "No new values",
           "portal_changed": "Portal changed",
           "login_rejected": "Login rejected",
           "connection_error": "Connection error"
@@ -76,6 +77,10 @@
     "daily_only": {
       "title": "Linz Netz delivers daily values only",
       "description": "Quarter-hour values are not enabled in the Serviceportal yet. Until then the integration imports daily values: each day's consumption appears in the first hour of that day in the Energy dashboard. For hourly values, give consent under \"Viertelstundenwerte aktivieren\" in the portal; enabling usually takes up to two working days. The integration then switches automatically and this notice disappears."
+    },
+    "stale": {
+      "title": "Linz Netz delivers no new consumption values",
+      "description": "Fetching works, but the Serviceportal has had no newer consumption values for more than two days. This happens, for example, after a meter replacement until Linz Netz provides the values of the new meter. Check in the Serviceportal whether newer values are shown there. The integration asks every hour and imports late values automatically; this notice then disappears."
     }
   }
 }
