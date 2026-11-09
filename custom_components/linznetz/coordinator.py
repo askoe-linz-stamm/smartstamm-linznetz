@@ -140,6 +140,13 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
         if self.problem is not None and self.problem.kind == "login_rejected":
             self._async_unsub_refresh()
             return
+        # Also after a failed run or a restart, from the last known horizon.
+        today = datetime.combine(dt_util.utcnow().astimezone(VIENNA).date(), time(), VIENNA)
+        self.update_interval = (
+            UPDATE_INTERVAL
+            if self.data is not None and self.data >= today
+            else MISSING_DAY_INTERVAL
+        )
         super()._schedule_refresh()
         interval = self.update_interval
         self.next_fetch = (
@@ -177,10 +184,6 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
             raise UpdateFailed(str(err)) from err
         self.problem = None
         self.last_successful_fetch = dt_util.utcnow()
-        today = datetime.combine(dt_util.utcnow().astimezone(VIENNA).date(), time(), VIENNA)
-        self.update_interval = (
-            UPDATE_INTERVAL if newest is not None and newest >= today else MISSING_DAY_INTERVAL
-        )
         return newest
 
     async def _async_fetch_and_import(self) -> datetime | None:
@@ -211,7 +214,8 @@ class LinzNetzCoordinator(DataUpdateCoordinator[datetime | None]):
             await self._async_import(periods)
             start, _, hours = periods[-1]
             horizon = start + timedelta(hours=hours)
-        if notice is None and horizon is not None and dt_util.utcnow() - horizon > STALE_AFTER:
+        # An old horizon outweighs the other notices: the portal stopped delivering.
+        if horizon is not None and dt_util.utcnow() - horizon > STALE_AFTER:
             notice = "stale"
         self._set_notice(notice)
         return horizon
